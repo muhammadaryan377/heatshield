@@ -13,12 +13,12 @@ function clockLabel(value?: string | null) {
   return date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
 }
 
-function Metric({ icon: Icon, label, value, tone = '' }: { icon: typeof ThermometerSun; label: string; value: string; tone?: string }) {
+function Metric({ icon: Icon, label, value, footer, tone = '' }: { icon: typeof ThermometerSun; label: string; value: string; footer: string; tone?: string }) {
   return (
     <article className="metric-card">
       <div className={`metric-card__label ${tone ? `metric-card__label--${tone}` : ''}`}><Icon size={16} /><span>{label}</span></div>
       <div className={`metric-card__value ${tone ? `metric-card__value--${tone}` : ''}`}>{value}</div>
-      <div className="metric-card__footer"><span>Live provider</span></div>
+      <div className="metric-card__footer"><span>{footer}</span></div>
     </article>
   )
 }
@@ -27,13 +27,15 @@ export function SiteStatusPanel({ data, onRefresh }: SiteStatusPanelProps) {
   const activeWorkers = data.workers.filter((worker) => worker.status !== 'offsite').length
   const conditions = data.conditions
   const riskLabel = data.risk ? data.risk.level.charAt(0).toUpperCase() + data.risk.level.slice(1) : '—'
+  const providerFooter = conditions ? (data.isLive ? 'Live FortyGuard' : 'Verified FortyGuard') : 'Awaiting provider'
+  const statusLabel = data.isLive ? 'Live' : conditions ? 'Recent verified' : 'Waiting for live data'
 
   return (
     <section className="site-status panel">
       <div className="site-status__header">
         <div className="site-status__title-row">
           <h2>Site Status</h2>
-          <span className={`live-indicator ${data.isLive ? '' : 'live-indicator--offline'}`}><span />{data.isLive ? 'Live' : 'Waiting for live data'}</span>
+          <span className={`live-indicator ${data.isLive ? '' : 'live-indicator--offline'}`}><span />{statusLabel}</span>
         </div>
         <button type="button" className="site-status__updated site-status__refresh" onClick={onRefresh}>Last updated: {clockLabel(data.observedAt)} ↻</button>
       </div>
@@ -50,10 +52,17 @@ export function SiteStatusPanel({ data, onRefresh }: SiteStatusPanelProps) {
         </div>
       )}
 
+      {conditions && data.statusMessage && (
+        <div className="live-data-empty">
+          <AlertTriangle size={19} />
+          <div><strong>Using the latest verified observation</strong><p>{data.statusMessage}</p></div>
+        </div>
+      )}
+
       <div className="metric-grid">
-        <Metric icon={ThermometerSun} label="Temperature" value={conditions ? `${conditions.temperatureC.toFixed(1)}°C` : '—'} tone="warm" />
-        <Metric icon={Droplets} label="Humidity" value={conditions ? `${conditions.humidityPercent.toFixed(0)}%` : '—'} tone="cool" />
-        <Metric icon={ThermometerSun} label="Heat Index" value={conditions ? `${conditions.heatIndexC.toFixed(1)}°C` : '—'} tone="danger" />
+        <Metric icon={ThermometerSun} label="Temperature" value={conditions ? `${conditions.temperatureC.toFixed(1)}°C` : '—'} footer={providerFooter} tone="warm" />
+        <Metric icon={Droplets} label="Humidity" value={conditions ? `${conditions.humidityPercent.toFixed(0)}%` : '—'} footer={providerFooter} tone="cool" />
+        <Metric icon={ThermometerSun} label="Heat Index" value={conditions ? `${conditions.heatIndexC.toFixed(1)}°C` : '—'} footer={providerFooter} tone="danger" />
         <article className="metric-card">
           <div className="metric-card__label metric-card__label--danger"><ShieldAlert size={16} /><span>Risk Level</span></div>
           <div className="metric-card__value metric-card__value--danger">{riskLabel}</div>
