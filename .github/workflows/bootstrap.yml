@@ -19,11 +19,8 @@ jobs:
       - name: Restore source tree
         shell: bash
         run: |
-          test -f bootstrap/part-00
-          test -f bootstrap/part-01
-          test -f bootstrap/part-02
-          test -f bootstrap/part-03
-          cat bootstrap/part-* > /tmp/heatshield.b64
+          for i in $(seq -w 0 14); do test -f "bootstrap/chunk-$i"; done
+          cat bootstrap/chunk-* > /tmp/heatshield.b64
           base64 --decode /tmp/heatshield.b64 > /tmp/heatshield.zip
           python - <<'PY'
           import zipfile
