@@ -50,6 +50,28 @@ class FortyGuardClient:
             'Accept': 'application/json',
         }
 
+    @staticmethod
+    def _safe_error_detail(response: httpx.Response) -> str:
+        """Extract a short provider error without ever exposing request headers/secrets."""
+        try:
+            body = response.json()
+        except ValueError:
+            text = response.text.strip()
+            return text[:240] if text else 'No provider error detail was returned.'
+
+        if isinstance(body, dict):
+            for key in ('message', 'detail', 'error'):
+                value = body.get(key)
+                if isinstance(value, str) and value.strip():
+                    return value.strip()[:240]
+            data = body.get('data')
+            if isinstance(data, dict):
+                for key in ('message', 'detail', 'error'):
+                    value = data.get(key)
+                    if isinstance(value, str) and value.strip():
+                        return value.strip()[:240]
+        return 'No provider error detail was returned.'
+
     async def _request(self, method: str, path: str, **kwargs: Any) -> dict[str, Any]:
         url = f"{self.settings.fortyguard_base_url.rstrip('/')}{path}"
         try:
@@ -59,7 +81,10 @@ class FortyGuardClient:
         except httpx.TimeoutException as exc:
             raise FortyGuardAPIError('FortyGuard request timed out.') from exc
         except httpx.HTTPStatusError as exc:
-            raise FortyGuardAPIError(f'FortyGuard returned HTTP {exc.response.status_code}.') from exc
+            detail = self._safe_error_detail(exc.response)
+            raise FortyGuardAPIError(
+                f'FortyGuard returned HTTP {exc.response.status_code}: {detail}'
+            ) from exc
         except httpx.RequestError as exc:
             raise FortyGuardAPIError('Unable to reach FortyGuard.') from exc
 
@@ -92,7 +117,9 @@ class FortyGuardClient:
                     raise FortyGuardAPIError('Completed FortyGuard job is missing result.')
                 return result
             if state in {'failed', 'error'}:
-                raise FortyGuardAPIError(f'FortyGuard activity {activity_id} failed.')
+                provider_message = data.get('message') or data.get('error') or body.get('message')
+                detail = f': {provider_message}' if isinstance(provider_message, str) and provider_message.strip() else ''
+                raise FortyGuardAPIError(f'FortyGuard activity {activity_id} failed{detail}.')
             if attempt + 1 < self.settings.fortyguard_max_poll_attempts:
                 await asyncio.sleep(self.settings.fortyguard_poll_interval_seconds)
         raise FortyGuardAPIError('FortyGuard activity did not complete before timeout.')
