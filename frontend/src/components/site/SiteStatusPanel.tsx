@@ -1,81 +1,91 @@
-import { AlertTriangle, Droplets, ShieldAlert, ThermometerSun, UserRound, UsersRound } from 'lucide-react'
+import { AlertTriangle, CloudOff, Droplets, ShieldAlert, ThermometerSun, UserRound, UsersRound } from 'lucide-react'
 import type { SiteIntelligence } from '../../types/site'
-import { MetricCard } from '../ui/MetricCard'
 
 interface SiteStatusPanelProps {
   data: SiteIntelligence
+  onRefresh: () => void
 }
 
-function clockLabel(value: string) {
+function clockLabel(value?: string | null) {
+  if (!value) return 'Not available'
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) return 'Latest'
   return date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
 }
 
-export function SiteStatusPanel({ data }: SiteStatusPanelProps) {
+function Metric({ icon: Icon, label, value, tone = '' }: { icon: typeof ThermometerSun; label: string; value: string; tone?: string }) {
+  return (
+    <article className="metric-card">
+      <div className={`metric-card__label ${tone ? `metric-card__label--${tone}` : ''}`}><Icon size={16} /><span>{label}</span></div>
+      <div className={`metric-card__value ${tone ? `metric-card__value--${tone}` : ''}`}>{value}</div>
+      <div className="metric-card__footer"><span>Live provider</span></div>
+    </article>
+  )
+}
+
+export function SiteStatusPanel({ data, onRefresh }: SiteStatusPanelProps) {
   const activeWorkers = data.workers.filter((worker) => worker.status !== 'offsite').length
-  const riskLabel = data.risk.level.charAt(0).toUpperCase() + data.risk.level.slice(1)
+  const conditions = data.conditions
+  const riskLabel = data.risk ? data.risk.level.charAt(0).toUpperCase() + data.risk.level.slice(1) : '—'
 
   return (
     <section className="site-status panel">
       <div className="site-status__header">
         <div className="site-status__title-row">
           <h2>Site Status</h2>
-          <span className="live-indicator"><span />{data.isLive ? 'Live' : 'Latest'}</span>
+          <span className={`live-indicator ${data.isLive ? '' : 'live-indicator--offline'}`}><span />{data.isLive ? 'Live' : 'Waiting for live data'}</span>
         </div>
-        <span className="site-status__updated">Last updated: {clockLabel(data.observedAt)} ↻</span>
+        <button type="button" className="site-status__updated site-status__refresh" onClick={onRefresh}>Last updated: {clockLabel(data.observedAt)} ↻</button>
       </div>
       <h3 className="section-kicker">Environmental Intelligence</h3>
+
+      {!conditions && (
+        <div className="live-data-empty">
+          <CloudOff size={21} />
+          <div>
+            <strong>No live environmental observation is being shown</strong>
+            <p>{data.statusMessage ?? 'Connect FortyGuard to retrieve verified conditions for this site.'}</p>
+          </div>
+          <button type="button" className="button button--quiet" onClick={onRefresh}>Retry live data</button>
+        </div>
+      )}
+
       <div className="metric-grid">
-        <MetricCard
-          icon={ThermometerSun}
-          label="Temperature"
-          value={`${data.conditions.temperatureC.toFixed(1)}°C`}
-          tone="warm"
-          footer={`${Math.abs(data.deltas.temperatureC).toFixed(1)}°C vs ${data.deltas.comparedAt}`}
-          footerDirection={data.deltas.temperatureC >= 0 ? 'up' : 'down'}
-        />
-        <MetricCard
-          icon={Droplets}
-          label="Humidity"
-          value={`${data.conditions.humidityPercent.toFixed(0)}%`}
-          tone="cool"
-          footer={`${Math.abs(data.deltas.humidityPercent).toFixed(0)}% vs ${data.deltas.comparedAt}`}
-          footerDirection={data.deltas.humidityPercent >= 0 ? 'up' : 'down'}
-        />
-        <MetricCard
-          icon={ThermometerSun}
-          label="Heat Index"
-          value={`${data.conditions.heatIndexC.toFixed(1)}°C`}
-          tone="danger"
-          footer={`${Math.abs(data.deltas.heatIndexC).toFixed(1)}°C vs ${data.deltas.comparedAt}`}
-          footerDirection={data.deltas.heatIndexC >= 0 ? 'up' : 'down'}
-        />
+        <Metric icon={ThermometerSun} label="Temperature" value={conditions ? `${conditions.temperatureC.toFixed(1)}°C` : '—'} tone="warm" />
+        <Metric icon={Droplets} label="Humidity" value={conditions ? `${conditions.humidityPercent.toFixed(0)}%` : '—'} tone="cool" />
+        <Metric icon={ThermometerSun} label="Heat Index" value={conditions ? `${conditions.heatIndexC.toFixed(1)}°C` : '—'} tone="danger" />
         <article className="metric-card">
           <div className="metric-card__label metric-card__label--danger"><ShieldAlert size={16} /><span>Risk Level</span></div>
           <div className="metric-card__value metric-card__value--danger">{riskLabel}</div>
-          <div className="metric-card__footer"><span>{data.risk.level === 'low' ? 'Routine monitoring' : 'Take action'}</span></div>
+          <div className="metric-card__footer"><span>{data.risk ? 'Calculated from verified conditions' : 'Awaiting live conditions'}</span></div>
         </article>
         <article className="metric-card">
           <div className="metric-card__label metric-card__label--cool"><UsersRound size={16} /><span>Workers Active</span></div>
           <div className="metric-card__value metric-card__value--cool">{activeWorkers}</div>
-          <div className="metric-card__footer"><span>On site now</span></div>
+          <div className="metric-card__footer"><span>Assigned to this site</span></div>
         </article>
         <article className="metric-card">
           <div className="metric-card__label metric-card__label--warm"><UserRound size={16} /><span>High Exposure</span></div>
           <div className="metric-card__value metric-card__value--warm">{data.highExposureCount}</div>
-          <div className="metric-card__footer"><span>Needs attention</span></div>
+          <div className="metric-card__footer"><span>From assigned workers</span></div>
         </article>
       </div>
-      <article className="risk-summary">
-        <AlertTriangle size={20} />
-        <div>
-          <strong>Risk Summary</strong>
-          <p>{data.risk.summary}</p>
-          <p>{data.risk.detail}</p>
-          <button type="button" className="text-link">View full forecast <span>›</span></button>
-        </div>
-      </article>
+
+      {data.risk ? (
+        <article className="risk-summary">
+          <AlertTriangle size={20} />
+          <div>
+            <strong>Risk Summary</strong>
+            <p>{data.risk.summary}</p>
+            <p>{data.risk.detail}</p>
+          </div>
+        </article>
+      ) : (
+        <article className="risk-summary risk-summary--neutral">
+          <CloudOff size={20} />
+          <div><strong>Risk summary pending</strong><p>HeatShield will calculate site risk when verified environmental data is available.</p></div>
+        </article>
+      )}
     </section>
   )
 }
