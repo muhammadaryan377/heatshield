@@ -5,6 +5,7 @@ import { AppShell } from '../components/layout/AppShell'
 import { Topbar } from '../components/layout/Topbar'
 import { CreateSiteModal } from '../components/site/CreateSiteModal'
 import { ExposureHotspots } from '../components/site/ExposureHotspots'
+import { FortyGuardDailyIntelligence } from '../components/site/FortyGuardDailyIntelligence'
 import { LiveConditions } from '../components/site/LiveConditions'
 import { NextAction } from '../components/site/NextAction'
 import { SiteMap } from '../components/site/SiteMap'
@@ -167,6 +168,9 @@ export function SiteIntelligencePage() {
               <SiteMap site={data.site} workers={data.workers} temperatureC={data.conditions?.temperatureC} weatherLabel={data.conditions?.weatherLabel} />
               <SiteStatusPanel data={data} onRefresh={reload} />
             </div>
+
+            <FortyGuardDailyIntelligence site={data.site} />
+
             <div className="dashboard-grid dashboard-grid--bottom">
               <WorkerOverview workers={data.workers} siteId={data.site.id} />
               <div className="supporting-grid">

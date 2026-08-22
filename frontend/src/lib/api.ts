@@ -1,4 +1,6 @@
 import type {
+  FortyGuardDailyProfile,
+  FortyGuardProfileRequest,
   OperationalPlan,
   Site,
   SiteCreate,
@@ -69,6 +71,13 @@ export const api = {
   },
   generateThermalMap(siteId: string, payload: ThermalMapRequest, signal?: AbortSignal) {
     return request<ThermalMapResponse>(`/api/sites/${siteId}/heatmap`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+      signal,
+    })
+  },
+  generateFortyGuardProfile(siteId: string, payload: FortyGuardProfileRequest, signal?: AbortSignal) {
+    return request<FortyGuardDailyProfile>(`/api/sites/${siteId}/fortyguard-profile`, {
       method: 'POST',
       body: JSON.stringify(payload),
       signal,

@@ -23,6 +23,8 @@ interface SiteMapProps {
   weatherLabel?: string | null
 }
 
+type Granularity = 60 | 80 | 100
+
 const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY ?? ''
 
 function markerColor(risk: Worker['risk']) {
@@ -124,7 +126,7 @@ export function SiteMap({ site, workers, temperatureC, weatherLabel }: SiteMapPr
   const [thermalOpen, setThermalOpen] = useState(false)
   const [thermalMode, setThermalMode] = useState<'site' | 'custom'>('site')
   const [selection, setSelection] = useState<Coordinate[]>([])
-  const [granularity, setGranularity] = useState(100)
+  const [granularity, setGranularity] = useState<Granularity>(100)
   const [thermal, setThermal] = useState<ThermalMapResponse | null>(null)
   const [thermalLoading, setThermalLoading] = useState(false)
   const [thermalError, setThermalError] = useState<string | null>(null)
@@ -381,10 +383,10 @@ export function SiteMap({ site, workers, temperatureC, weatherLabel }: SiteMapPr
 
           <label className="thermal-resolution">
             <span>Cell resolution</span>
-            <select value={granularity} onChange={(event) => { setGranularity(Number(event.target.value)); setThermal(null) }}>
-              <option value={50}>50 m · detailed</option>
-              <option value={100}>100 m · balanced</option>
-              <option value={200}>200 m · faster</option>
+            <select value={granularity} onChange={(event) => { setGranularity(Number(event.target.value) as Granularity); setThermal(null) }}>
+              <option value={60}>60 m · detailed</option>
+              <option value={80}>80 m · balanced</option>
+              <option value={100}>100 m · efficient</option>
             </select>
           </label>
 
