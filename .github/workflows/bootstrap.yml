@@ -1,0 +1,39 @@
+name: Bootstrap HeatShield source
+
+on:
+  push:
+    paths:
+      - 'bootstrap/part-*'
+
+permissions:
+  contents: write
+
+jobs:
+  bootstrap:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Restore source tree
+        shell: bash
+        run: |
+          cat bootstrap/part-* > /tmp/heatshield.b64
+          base64 --decode /tmp/heatshield.b64 > /tmp/heatshield.zip
+          python - <<'PY'
+          import zipfile
+          with zipfile.ZipFile('/tmp/heatshield.zip') as archive:
+              archive.extractall('.')
+          PY
+          rm -rf bootstrap
+
+      - name: Commit restored source
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git diff --cached --quiet && exit 0
+          git commit -m "feat: build production Site Intelligence screen"
+          git push
