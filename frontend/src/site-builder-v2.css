@@ -223,10 +223,17 @@
   box-shadow: none;
 }
 
+/* Keep our boundary-status chip away from Google Maps' native map-type controls. */
 .site-builder-map-tip {
+  left: auto;
+  right: 18px;
+  top: 18px;
+  bottom: auto;
+  max-width: min(340px, calc(100% - 190px));
   display: flex;
   align-items: center;
   gap: 7px;
+  pointer-events: none;
 }
 
 .field-with-action button:disabled {
@@ -268,4 +275,9 @@
     grid-column: 1 / -1;
   }
   .site-builder-save { min-width: 0; }
+  .site-builder-map-tip {
+    right: 12px;
+    top: 64px;
+    max-width: calc(100% - 24px);
+  }
 }
