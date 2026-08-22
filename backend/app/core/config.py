@@ -33,9 +33,19 @@ class Settings(BaseSettings):
     fortyguard_recent_hour_fallbacks: int = 3
     # Avoid spending provider credits repeatedly on browser refreshes.
     fortyguard_cache_ttl_seconds: int = 600
+    # After a full zero-tile sequence, stop retrying FortyGuard for a short
+    # period and serve official site-level conditions from the fallback source.
+    fortyguard_failure_cooldown_seconds: int = 900
+
+    # Official US National Weather Service fallback. No API key is required.
+    nws_base_url: str = 'https://api.weather.gov'
+    nws_timeout_seconds: float = 12.0
+    nws_user_agent: str = 'HeatShield/1.0 (operational heat safety application)'
 
     deepseek_api_key: str | None = None
     deepseek_base_url: str = 'https://api.deepseek.com'
+    deepseek_model: str = 'deepseek-chat'
+    deepseek_timeout_seconds: float = 30.0
 
     @property
     def cors_origin_list(self) -> list[str]:
@@ -51,6 +61,10 @@ class Settings(BaseSettings):
     @property
     def fortyguard_configured(self) -> bool:
         return bool(self.fortyguard_api_key and self.fortyguard_api_key.strip())
+
+    @property
+    def deepseek_configured(self) -> bool:
+        return bool(self.deepseek_api_key and self.deepseek_api_key.strip())
 
 
 @lru_cache
