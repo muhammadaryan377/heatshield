@@ -196,3 +196,33 @@ export interface OperationalPlan {
   reasoning: string
   reasoningFactors: string[]
 }
+
+export interface ThermalMapRequest {
+  mode: 'site' | 'custom'
+  polygon?: Coordinate[]
+  granularityMeters: number
+}
+
+export interface ThermalTile {
+  id: string
+  temperatureC: number
+  polygon: Coordinate[]
+}
+
+export interface ThermalMapResponse {
+  siteId: string
+  mode: 'site' | 'custom'
+  dataStatus: 'verified' | 'unavailable' | 'configuration_required'
+  observedAt?: string | null
+  timezoneName?: string | null
+  granularityMeters: number
+  tileCount: number
+  minTemperatureC?: number | null
+  maxTemperatureC?: number | null
+  meanTemperatureC?: number | null
+  hottestTileId?: string | null
+  coolestTileId?: string | null
+  tiles: ThermalTile[]
+  message?: string | null
+  cached: boolean
+}
