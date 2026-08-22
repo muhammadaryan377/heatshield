@@ -11,6 +11,16 @@ export interface SiteZone {
   name: string
   type: 'open-yard' | 'roof' | 'staging' | 'other'
   center: Coordinate
+  allowedTasks: string[]
+  operationalApproved: boolean
+}
+
+export interface SiteZoneCreate {
+  name: string
+  type: 'open-yard' | 'roof' | 'staging' | 'other'
+  center: Coordinate
+  allowedTasks: string[]
+  operationalApproved: boolean
 }
 
 export interface Site {
@@ -283,4 +293,83 @@ export interface FortyGuardDailyProfile {
   workers: FortyGuardWorkerExposure[]
   message?: string | null
   cached: boolean
+}
+
+export interface OperationalPlannerRequest {
+  offsetsHours: number[]
+  granularityMeters: 60 | 80 | 100
+  minImprovementC: number
+}
+
+export interface OperationalPlannerOption {
+  kind: 'now' | 'better_time' | 'better_place'
+  status: 'verified' | 'unavailable' | 'not_applicable'
+  label: string
+  temperatureC?: number | null
+  deltaC?: number | null
+  sampledAt?: string | null
+  zoneId?: string | null
+  zoneName?: string | null
+  detail: string
+  provider: 'fortyguard'
+}
+
+export interface WorkerOperationalDecision {
+  workerId: string
+  workerName: string
+  role: string
+  task: string
+  currentArea: string
+  workload?: string | null
+  sunExposure?: string | null
+  heatIndexC?: number | null
+  now: OperationalPlannerOption
+  betterTime: OperationalPlannerOption
+  betterPlace: OperationalPlannerOption
+  recommendedChoice: 'now' | 'better_time' | 'better_place' | 'review'
+  recommendation: string
+  rationale: string
+  evidenceWarnings: string[]
+}
+
+export interface OperationalHeatPlan {
+  site: Site
+  generatedAt: string
+  timezoneName: string
+  agentMode: 'deterministic' | 'deepseek_assisted'
+  conditionSource?: 'fortyguard' | 'nws' | null
+  conditionHeatIndexC?: number | null
+  providerRequestCount: number
+  offsetsHours: number[]
+  approvedZoneCount: number
+  workers: WorkerOperationalDecision[]
+  warnings: string[]
+}
+
+export interface OperationalApprovalRequest {
+  workerId: string
+  choice: 'now' | 'better_time' | 'better_place'
+  targetTime?: string | null
+  targetZoneId?: string | null
+  baselineTemperatureC?: number | null
+  expectedTemperatureC?: number | null
+  expectedReductionC?: number | null
+}
+
+export interface OperationalApproval {
+  id: string
+  siteId: string
+  workerId: string
+  choice: 'now' | 'better_time' | 'better_place'
+  targetTime?: string | null
+  targetZoneId?: string | null
+  baselineTemperatureC?: number | null
+  expectedTemperatureC?: number | null
+  expectedReductionC?: number | null
+  status: 'pending_verification' | 'verified' | 'verification_unavailable'
+  createdAt: string
+  verifiedAt?: string | null
+  verifiedTemperatureC?: number | null
+  actualReductionC?: number | null
+  verificationMessage?: string | null
 }
