@@ -47,9 +47,11 @@ class SiteCreate(CamelModel):
 class Worker(CamelModel):
     id: str
     siteId: str
+    workerCode: str | None = None
     name: str
     initials: str
     role: str
+    team: str | None = None
     location: str
     locationId: str
     status: Literal['active', 'break', 'offsite'] = 'active'
@@ -63,11 +65,15 @@ class Worker(CamelModel):
     sunExposure: Literal['indoor', 'partial', 'direct'] | None = None
     shadeAccess: Literal['available', 'limited', 'none'] | None = None
     waterAccess: bool | None = None
+    supervisor: str | None = None
+    notes: str | None = None
 
 
 class WorkerCreate(CamelModel):
+    workerCode: str | None = Field(default=None, max_length=40)
     name: str = Field(min_length=2, max_length=120)
     role: str = Field(min_length=2, max_length=120)
+    team: str | None = Field(default=None, max_length=120)
     location: str = Field(default='Site area', max_length=120)
     locationId: str = Field(default='site-area', max_length=120)
     coordinate: Coordinate
@@ -78,6 +84,9 @@ class WorkerCreate(CamelModel):
     sunExposure: Literal['indoor', 'partial', 'direct'] | None = None
     shadeAccess: Literal['available', 'limited', 'none'] | None = None
     waterAccess: bool | None = None
+    supervisor: str | None = Field(default=None, max_length=120)
+    status: Literal['active', 'break', 'offsite'] = 'active'
+    notes: str | None = Field(default=None, max_length=500)
 
 
 class Conditions(CamelModel):
