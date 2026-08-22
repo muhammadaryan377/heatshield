@@ -21,6 +21,17 @@ async def health() -> dict[str, str]:
     return {'status': 'ok'}
 
 
+@router.get('/config/status')
+async def config_status(settings: Settings = Depends(get_settings)) -> dict[str, object]:
+    """Return non-secret configuration state for local/product diagnostics."""
+    return {
+        'fortyguardConfigured': settings.fortyguard_configured,
+        'fortyguardBaseUrl': settings.fortyguard_base_url,
+        'fixturesEnabled': settings.heatshield_use_fixtures,
+        'environment': settings.app_env,
+    }
+
+
 @router.get('/sites', response_model=list[Site])
 async def list_sites(db: HeatShieldStore = Depends(store)) -> list[Site]:
     return db.list_sites()
