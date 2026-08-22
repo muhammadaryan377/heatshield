@@ -21,6 +21,19 @@ class HeatShieldStore:
         db.execute('PRAGMA foreign_keys = ON')
         return db
 
+    @staticmethod
+    def _ensure_worker_columns(db: sqlite3.Connection) -> None:
+        existing = {row['name'] for row in db.execute('PRAGMA table_info(workers)').fetchall()}
+        additions = {
+            'worker_code': 'TEXT',
+            'team': 'TEXT',
+            'supervisor': 'TEXT',
+            'notes': 'TEXT',
+        }
+        for column, definition in additions.items():
+            if column not in existing:
+                db.execute(f'ALTER TABLE workers ADD COLUMN {column} {definition}')
+
     def _initialize(self) -> None:
         with self._connect() as db:
             db.executescript('''
@@ -38,9 +51,11 @@ class HeatShieldStore:
                 CREATE TABLE IF NOT EXISTS workers (
                     id TEXT PRIMARY KEY,
                     site_id TEXT NOT NULL,
+                    worker_code TEXT,
                     name TEXT NOT NULL,
                     initials TEXT NOT NULL,
                     role TEXT NOT NULL,
+                    team TEXT,
                     location TEXT NOT NULL,
                     location_id TEXT NOT NULL,
                     status TEXT NOT NULL DEFAULT 'active',
@@ -55,11 +70,14 @@ class HeatShieldStore:
                     sun_exposure TEXT,
                     shade_access TEXT,
                     water_access INTEGER,
+                    supervisor TEXT,
+                    notes TEXT,
                     created_at TEXT NOT NULL,
                     FOREIGN KEY(site_id) REFERENCES sites(id) ON DELETE CASCADE
                 );
                 CREATE INDEX IF NOT EXISTS idx_workers_site_id ON workers(site_id);
             ''')
+            self._ensure_worker_columns(db)
 
     @staticmethod
     def _site_from_row(row: sqlite3.Row) -> Site:
@@ -74,13 +92,15 @@ class HeatShieldStore:
     @staticmethod
     def _worker_from_row(row: sqlite3.Row) -> Worker:
         return Worker(
-            id=row['id'], siteId=row['site_id'], name=row['name'], initials=row['initials'],
-            role=row['role'], location=row['location'], locationId=row['location_id'],
-            status=row['status'], risk=row['risk'], lastCheckIn=row['last_check_in'],
+            id=row['id'], siteId=row['site_id'], workerCode=row['worker_code'],
+            name=row['name'], initials=row['initials'], role=row['role'], team=row['team'],
+            location=row['location'], locationId=row['location_id'], status=row['status'],
+            risk=row['risk'], lastCheckIn=row['last_check_in'],
             coordinate=Coordinate(lat=row['lat'], lng=row['lng']), task=row['task'],
             workIntensity=row['work_intensity'], shiftStart=row['shift_start'], shiftEnd=row['shift_end'],
             sunExposure=row['sun_exposure'], shadeAccess=row['shade_access'],
             waterAccess=None if row['water_access'] is None else bool(row['water_access']),
+            supervisor=row['supervisor'], notes=row['notes'],
         )
 
     def list_sites(self) -> list[Site]:
@@ -115,16 +135,36 @@ class HeatShieldStore:
     def create_worker(self, site_id: str, payload: WorkerCreate) -> Worker:
         self.get_site(site_id)
         worker_id = f'worker-{uuid4().hex[:12]}'
+        worker_code = (payload.workerCode or f'WKR-{uuid4().hex[:6].upper()}').strip()
         initials = ''.join(part[0].upper() for part in payload.name.split()[:2]) or 'W'
         now = datetime.now(timezone.utc)
         last_check_in = now.strftime('%H:%M')
+
         with self._connect() as db:
+            duplicate = db.execute(
+                'SELECT 1 FROM workers WHERE site_id = ? AND worker_code = ? LIMIT 1',
+                (site_id, worker_code),
+            ).fetchone()
+            if duplicate is not None:
+                raise ValueError('Worker ID already exists at this site.')
+
             db.execute(
-                '''INSERT INTO workers (id,site_id,name,initials,role,location,location_id,status,risk,last_check_in,lat,lng,task,work_intensity,shift_start,shift_end,sun_exposure,shade_access,water_access,created_at)
-                   VALUES (?,?,?,?,?,?,?,'active','low',?,?,?,?,?,?,?,?,?,?,?)''',
-                (worker_id, site_id, payload.name.strip(), initials, payload.role.strip(), payload.location.strip(), payload.locationId.strip(),
-                 last_check_in, payload.coordinate.lat, payload.coordinate.lng, payload.task, payload.workIntensity, payload.shiftStart,
-                 payload.shiftEnd, payload.sunExposure, payload.shadeAccess, None if payload.waterAccess is None else int(payload.waterAccess), now.isoformat()),
+                '''INSERT INTO workers (
+                    id,site_id,worker_code,name,initials,role,team,location,location_id,status,risk,
+                    last_check_in,lat,lng,task,work_intensity,shift_start,shift_end,sun_exposure,
+                    shade_access,water_access,supervisor,notes,created_at
+                ) VALUES (?,?,?,?,?,?,?,?,?,?,'low',?,?,?,?,?,?,?,?,?,?,?,?,?)''',
+                (
+                    worker_id, site_id, worker_code, payload.name.strip(), initials, payload.role.strip(),
+                    payload.team.strip() if payload.team else None,
+                    payload.location.strip(), payload.locationId.strip(), payload.status,
+                    last_check_in, payload.coordinate.lat, payload.coordinate.lng, payload.task,
+                    payload.workIntensity, payload.shiftStart, payload.shiftEnd, payload.sunExposure,
+                    payload.shadeAccess, None if payload.waterAccess is None else int(payload.waterAccess),
+                    payload.supervisor.strip() if payload.supervisor else None,
+                    payload.notes.strip() if payload.notes else None,
+                    now.isoformat(),
+                ),
             )
             row = db.execute('SELECT * FROM workers WHERE id = ?', (worker_id,)).fetchone()
         assert row is not None
