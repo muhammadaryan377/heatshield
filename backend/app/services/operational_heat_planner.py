@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
-from datetime import datetime, time, timezone
+from datetime import datetime, time, timedelta, timezone
 from typing import Any
 
 import httpx
@@ -20,7 +20,7 @@ from app.schemas import (
     WorkerOperationalDecision,
 )
 from app.services.fortyguard import FortyGuardAPIError, FortyGuardClient, FortyGuardConfigurationError
-from app.services.site_intelligence import SiteIntelligenceService
+from app.services.nws import NWSAPIError, NWSClient
 from app.services.store import HeatShieldStore
 
 
@@ -29,14 +29,16 @@ class OperationalHeatPlannerService:
 
     One site-wide heatmap is requested for NOW and for each requested future offset.
     Worker and approved-zone temperatures are spatial joins against those shared
-    maps, so provider requests do not scale with worker count.
+    maps, so provider requests do not scale with worker count. The current
+    FortyGuard scan is reused for environmental parameters instead of submitting
+    another heatmap just to obtain heat-index context.
     """
 
     def __init__(self, settings: Settings):
         self.settings = settings
         self.store = HeatShieldStore(settings)
         self.fortyguard = FortyGuardClient(settings)
-        self.intelligence = SiteIntelligenceService(settings)
+        self.nws = NWSClient(settings)
 
     @staticmethod
     def _features(result: dict[str, Any] | None) -> list[dict[str, Any]]:
@@ -134,6 +136,41 @@ class OperationalHeatPlannerService:
             return features, None, True
         except FortyGuardAPIError as exc:
             return [], str(exc), False
+
+    async def _condition_context(
+        self,
+        site: Site,
+        current_features: list[dict[str, Any]],
+        current_target: datetime,
+    ) -> tuple[float | None, str | None, int, str | None]:
+        """Return heat index + source, reusing the current TCM scan when possible."""
+        center_temperature = self._sample(current_features, site.center.lat, site.center.lng)
+        if center_temperature is not None:
+            payload = {
+                'latitude': site.center.lat,
+                'longitude': site.center.lng,
+                'temperature': center_temperature,
+                'date_time': {
+                    'start_date': current_target.strftime('%Y-%m-%d'),
+                    'start_time': current_target.strftime('%H:00'),
+                    'filter_type': 1,
+                },
+            }
+            try:
+                activity_id = await self.fortyguard._submit('/v1/env_params', payload)
+                result = await self.fortyguard._wait(activity_id)
+                _, heat_index, _, _, _ = self.fortyguard._extract_environment(result)
+                return heat_index, 'fortyguard', 1, None
+            except FortyGuardAPIError as exc:
+                provider_error = str(exc)
+        else:
+            provider_error = 'Current FortyGuard TCM scan did not contain the site center.'
+
+        try:
+            observation = await self.nws.fetch_observation(site=site)
+            return observation.heat_index_c, 'nws', 0, provider_error
+        except NWSAPIError as exc:
+            return None, None, 0, f'{provider_error} NWS context also unavailable: {exc}'
 
     @staticmethod
     def _unavailable(kind: str, label: str, detail: str) -> OperationalPlannerOption:
@@ -234,7 +271,6 @@ class OperationalHeatPlannerService:
         now_utc = datetime.now(timezone.utc)
         local_now = now_utc.astimezone(site_timezone).replace(minute=0, second=0, microsecond=0)
 
-        intelligence_task = asyncio.create_task(self.intelligence.get(site_id))
         warnings: list[str] = []
         provider_request_count = 0
 
@@ -249,7 +285,7 @@ class OperationalHeatPlannerService:
         scans: dict[int, tuple[datetime, list[dict[str, Any]], str | None]] = {}
         if configured:
             async def run_offset(offset: int):
-                target = local_now + __import__('datetime').timedelta(hours=offset)
+                target = local_now + timedelta(hours=offset)
                 features, error, submitted = await self._scan(site, target, request.granularityMeters)
                 return offset, target, features, error, submitted
 
@@ -262,14 +298,25 @@ class OperationalHeatPlannerService:
                     warnings.append(f'{target.strftime("%b %d, %I:%M %p")}: {error}')
         else:
             for offset in offsets:
-                target = local_now + __import__('datetime').timedelta(hours=offset)
+                target = local_now + timedelta(hours=offset)
                 scans[offset] = (target, [], 'FortyGuard not configured')
 
-        intelligence = await intelligence_task
-        heat_index = intelligence.conditions.heatIndexC if intelligence.conditions else None
-        decisions: list[WorkerOperationalDecision] = []
         current_target, current_features, current_error = scans[0]
+        if configured:
+            heat_index, condition_source, environment_jobs, environment_warning = await self._condition_context(site, current_features, current_target)
+            provider_request_count += environment_jobs
+            if environment_warning:
+                warnings.append(environment_warning)
+        else:
+            try:
+                observation = await self.nws.fetch_observation(site=site)
+                heat_index = observation.heat_index_c
+                condition_source = 'nws'
+            except NWSAPIError:
+                heat_index = None
+                condition_source = None
 
+        decisions: list[WorkerOperationalDecision] = []
         for worker in workers:
             task_name = (worker.task or worker.role).strip()
             current_temp = self._sample(current_features, worker.coordinate.lat, worker.coordinate.lng)
@@ -283,14 +330,14 @@ class OperationalHeatPlannerService:
 
             future_candidates: list[OperationalPlannerOption] = []
             for offset in request.offsetsHours:
-                target, features, error = scans[offset]
+                target, features, _ = scans[offset]
                 if not self._inside_shift(worker, target):
                     continue
-                temp = self._sample(features, worker.coordinate.lat, worker.coordinate.lng)
-                if temp is None:
+                sampled_temperature = self._sample(features, worker.coordinate.lat, worker.coordinate.lng)
+                if sampled_temperature is None:
                     continue
                 future_candidates.append(self._verified_option(
-                    'better_time', f'+{offset}h', temp, current_temp, target,
+                    'better_time', f'+{offset}h', sampled_temperature, current_temp, target,
                     f'Same worker location sampled by FortyGuard {offset} hour(s) from the current planning hour.'
                 ))
 
@@ -310,11 +357,11 @@ class OperationalHeatPlannerService:
             zone_candidates: list[OperationalPlannerOption] = []
             eligible_zones = [zone for zone in approved_zones if self._zone_allows_task(zone, worker) and zone.id != worker.locationId]
             for zone in eligible_zones:
-                temp = self._sample(current_features, zone.center.lat, zone.center.lng)
-                if temp is None:
+                zone_temperature = self._sample(current_features, zone.center.lat, zone.center.lng)
+                if zone_temperature is None:
                     continue
                 zone_candidates.append(self._verified_option(
-                    'better_place', zone.name, temp, current_temp, current_target,
+                    'better_place', zone.name, zone_temperature, current_temp, current_target,
                     f'Approved zone center is inside a verified FortyGuard cell and explicitly allows {task_name}.', zone,
                 ))
 
@@ -348,13 +395,13 @@ class OperationalHeatPlannerService:
                 recommendation = 'Review manually — current worker tile is not verified by FortyGuard.'
                 rationale = 'HeatShield will not compare unverified temperatures or invent a spatial baseline.'
             elif verified_improvements:
-                choice, reduction = max(verified_improvements, key=lambda item: item[1])
+                choice, improvement = max(verified_improvements, key=lambda item: item[1])
                 if choice == 'better_time':
                     recommendation = f'Consider shifting this task to {datetime.fromisoformat(better_time.sampledAt).strftime("%I:%M %p")}.' if better_time.sampledAt else 'Consider the verified cooler time window.'
-                    rationale = f'FortyGuard samples show approximately {reduction:.1f}°C lower temperature at the same worker location.'
+                    rationale = f'FortyGuard samples show approximately {improvement:.1f}°C lower temperature at the same worker location.'
                 else:
                     recommendation = f'Consider equivalent approved work in {better_place.zoneName}.'
-                    rationale = f'FortyGuard samples show approximately {reduction:.1f}°C lower temperature at the approved zone center.'
+                    rationale = f'FortyGuard samples show approximately {improvement:.1f}°C lower temperature at the approved zone center.'
             else:
                 choice = 'now'
                 recommendation = 'No verified cooler alternative meets the configured improvement threshold; keep the current assignment with heat controls.'
@@ -404,7 +451,7 @@ class OperationalHeatPlannerService:
             generatedAt=now_utc.isoformat(),
             timezoneName=timezone_name,
             agentMode='deepseek_assisted' if explanations else 'deterministic',
-            conditionSource=intelligence.conditionSource,
+            conditionSource=condition_source,
             conditionHeatIndexC=heat_index,
             providerRequestCount=provider_request_count,
             offsetsHours=request.offsetsHours,
