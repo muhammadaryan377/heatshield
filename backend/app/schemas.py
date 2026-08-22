@@ -20,6 +20,26 @@ class SiteZone(CamelModel):
     name: str
     type: Literal['open-yard', 'roof', 'staging', 'other'] = 'other'
     center: Coordinate
+    allowedTasks: list[str] = Field(default_factory=list)
+    operationalApproved: bool = True
+
+
+class SiteZoneCreate(CamelModel):
+    name: str = Field(min_length=2, max_length=120)
+    type: Literal['open-yard', 'roof', 'staging', 'other'] = 'other'
+    center: Coordinate
+    allowedTasks: list[str] = Field(default_factory=list, max_length=30)
+    operationalApproved: bool = True
+
+    @field_validator('allowedTasks')
+    @classmethod
+    def clean_tasks(cls, value: list[str]) -> list[str]:
+        cleaned: list[str] = []
+        for item in value:
+            task = item.strip()
+            if task and task.casefold() not in {entry.casefold() for entry in cleaned}:
+                cleaned.append(task[:120])
+        return cleaned
 
 
 class Site(CamelModel):
@@ -318,6 +338,95 @@ class FortyGuardDailyProfile(CamelModel):
     workers: list[FortyGuardWorkerExposure] = Field(default_factory=list)
     message: str | None = None
     cached: bool = False
+
+
+class OperationalPlannerRequest(CamelModel):
+    offsetsHours: list[int] = Field(default_factory=lambda: [1, 3, 6, 9, 12])
+    granularityMeters: int = 100
+    minImprovementC: float = Field(default=1.0, ge=0.1, le=10.0)
+
+    @model_validator(mode='after')
+    def validate_planner(self):
+        if self.granularityMeters not in {60, 80, 100}:
+            raise ValueError('FortyGuard granularity must be 60, 80, or 100 meters.')
+        unique = sorted(set(self.offsetsHours))
+        if not unique or len(unique) > 5 or any(hour < 1 or hour > 12 for hour in unique):
+            raise ValueError('Choose between one and five future offsets from 1 to 12 hours.')
+        self.offsetsHours = unique
+        return self
+
+
+class OperationalPlannerOption(CamelModel):
+    kind: Literal['now', 'better_time', 'better_place']
+    status: Literal['verified', 'unavailable', 'not_applicable']
+    label: str
+    temperatureC: float | None = None
+    deltaC: float | None = None
+    sampledAt: str | None = None
+    zoneId: str | None = None
+    zoneName: str | None = None
+    detail: str
+    provider: Literal['fortyguard'] = 'fortyguard'
+
+
+class WorkerOperationalDecision(CamelModel):
+    workerId: str
+    workerName: str
+    role: str
+    task: str
+    currentArea: str
+    workload: str | None = None
+    sunExposure: str | None = None
+    heatIndexC: float | None = None
+    now: OperationalPlannerOption
+    betterTime: OperationalPlannerOption
+    betterPlace: OperationalPlannerOption
+    recommendedChoice: Literal['now', 'better_time', 'better_place', 'review']
+    recommendation: str
+    rationale: str
+    evidenceWarnings: list[str] = Field(default_factory=list)
+
+
+class OperationalHeatPlan(CamelModel):
+    site: Site
+    generatedAt: str
+    timezoneName: str
+    agentMode: Literal['deterministic', 'deepseek_assisted'] = 'deterministic'
+    conditionSource: Literal['fortyguard', 'nws'] | None = None
+    conditionHeatIndexC: float | None = None
+    providerRequestCount: int = 0
+    offsetsHours: list[int] = Field(default_factory=list)
+    approvedZoneCount: int = 0
+    workers: list[WorkerOperationalDecision] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+
+
+class OperationalApprovalRequest(CamelModel):
+    workerId: str
+    choice: Literal['now', 'better_time', 'better_place']
+    targetTime: str | None = None
+    targetZoneId: str | None = None
+    baselineTemperatureC: float | None = None
+    expectedTemperatureC: float | None = None
+    expectedReductionC: float | None = None
+
+
+class OperationalApproval(CamelModel):
+    id: str
+    siteId: str
+    workerId: str
+    choice: Literal['now', 'better_time', 'better_place']
+    targetTime: str | None = None
+    targetZoneId: str | None = None
+    baselineTemperatureC: float | None = None
+    expectedTemperatureC: float | None = None
+    expectedReductionC: float | None = None
+    status: Literal['pending_verification', 'verified', 'verification_unavailable']
+    createdAt: str
+    verifiedAt: str | None = None
+    verifiedTemperatureC: float | None = None
+    actualReductionC: float | None = None
+    verificationMessage: str | None = None
 
 
 class ActionAccepted(CamelModel):

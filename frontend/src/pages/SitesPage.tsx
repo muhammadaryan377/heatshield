@@ -4,6 +4,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom'
 import { AppShell } from '../components/layout/AppShell'
 import { Topbar } from '../components/layout/Topbar'
 import { CreateSiteModal } from '../components/site/CreateSiteModal'
+import { OperationalZoneManager } from '../components/site/OperationalZoneManager'
 import { SiteMap } from '../components/site/SiteMap'
 import { StatePanel } from '../components/ui/StatePanel'
 import { api } from '../lib/api'
@@ -14,7 +15,7 @@ const STORAGE_KEY = 'heatshield:selected-site'
 function sourceLabel(data: SiteIntelligence | null) {
   if (!data?.conditions) return 'Waiting for verified conditions'
   if (data.conditionSource === 'fortyguard') return 'FortyGuard verified'
-  if (data.conditionSource === 'nws') return 'NWS live fallback'
+  if (data.conditionSource === 'nws') return 'NWS live conditions'
   return 'Verified conditions'
 }
 
@@ -88,6 +89,11 @@ export function SitesPage() {
     setSelectedSiteId(site.id)
   }
 
+  const siteUpdated = (site: Site) => {
+    setSites((current) => current.map((item) => item.id === site.id ? site : item))
+    setIntelligence((current) => current && current.site.id === site.id ? { ...current, site } : current)
+  }
+
   return (
     <AppShell>
       <Topbar
@@ -97,7 +103,7 @@ export function SitesPage() {
         onSiteChange={selectSite}
         onCreateSite={() => setCreateOpen(true)}
         pageTitle="Sites"
-        pageSubtitle="Manage work areas, staffing and verified environmental status without losing site context."
+        pageSubtitle="Manage work areas, approved operational zones, staffing and verified environmental status without losing site context."
       />
 
       <div className="sites-page">
@@ -107,7 +113,7 @@ export function SitesPage() {
               <article className="sites-summary-card panel"><span><Building2 size={17} /> Total Sites</span><strong>{sites.length}</strong><small>{sites.filter((site) => site.status === 'active').length} active work areas</small></article>
               <article className="sites-summary-card panel"><span><UsersRound size={17} /> Active Workers</span><strong>{totalWorkers}</strong><small>Across saved sites</small></article>
               <article className="sites-summary-card panel"><span><Activity size={17} /> Selected Site Risk</span><strong className={`sites-risk-value sites-risk-value--${intelligence?.risk?.level ?? 'pending'}`}>{riskLabel(intelligence)}</strong><small>{selectedSite?.name ?? 'No site selected'}</small></article>
-              <article className="sites-summary-card panel"><span><CloudSun size={17} /> Condition Source</span><strong className="sites-source-value">{sourceLabel(intelligence)}</strong><small>{intelligence?.thermalStatus === 'unavailable' ? 'FortyGuard thermal layer unavailable' : 'Thermal status tracked separately'}</small></article>
+              <article className="sites-summary-card panel"><span><ShieldCheck size={17} /> Approved Zones</span><strong>{selectedSite?.zones.filter((zone) => zone.operationalApproved).length ?? 0}</strong><small>Eligible for Better Place</small></article>
             </section>
 
             {!sites.length ? (
@@ -122,7 +128,7 @@ export function SitesPage() {
                     const selected = site.id === selectedSiteId
                     return <button key={site.id} type="button" className={`sites-list-item${selected ? ' sites-list-item--active' : ''}`} onClick={() => selectSite(site.id)}>
                       <span className="sites-list-icon"><Building2 size={18} /></span>
-                      <span className="sites-list-copy"><strong>{site.name}</strong><small>{site.address}</small><span>{active} active worker{active === 1 ? '' : 's'}</span></span>
+                      <span className="sites-list-copy"><strong>{site.name}</strong><small>{site.address}</small><span>{active} active worker{active === 1 ? '' : 's'} · {site.zones.filter((zone) => zone.operationalApproved).length} approved zone{site.zones.filter((zone) => zone.operationalApproved).length === 1 ? '' : 's'}</span></span>
                       <span className={`status-pill status-pill--${site.status === 'active' ? 'active' : 'offsite'}`}>{site.status}</span>
                       <ChevronRight size={17} />
                     </button>
@@ -138,14 +144,15 @@ export function SitesPage() {
                         <div><span>Workers assigned</span><strong>{selectedWorkers.length}</strong><small>{selectedWorkers.filter((worker) => worker.status !== 'offsite').length} active</small></div>
                         <div><span>Temperature</span><strong>{intelligence.conditions ? `${intelligence.conditions.temperatureC.toFixed(1)}°C` : '—'}</strong><small>{sourceLabel(intelligence)}</small></div>
                         <div><span>Heat index</span><strong>{intelligence.conditions ? `${intelligence.conditions.heatIndexC.toFixed(1)}°C` : '—'}</strong><small>{intelligence.conditions ? `${intelligence.conditions.humidityPercent.toFixed(0)}% humidity` : 'Awaiting verified data'}</small></div>
-                        <div><span>High exposure</span><strong>{intelligence.highExposureCount}</strong><small>High or extreme worker risk</small></div>
+                        <div><span>Approved zones</span><strong>{selectedSite.zones.filter((zone) => zone.operationalApproved).length}</strong><small>Supervisor-defined movement options</small></div>
                       </div>
                       <div className="sites-actions">
                         <button className="button button--secondary" onClick={() => navigate(`/workers/new?site=${encodeURIComponent(selectedSite.id)}`)}><UserPlus size={16} /> Add Worker</button>
-                        <button className="button button--primary" onClick={() => navigate(`/plan?site=${encodeURIComponent(selectedSite.id)}`)}><ClipboardList size={16} /> Generate Plan</button>
+                        <button className="button button--primary" onClick={() => navigate(`/plan?site=${encodeURIComponent(selectedSite.id)}`)}><ClipboardList size={16} /> Operational Planner</button>
                         <button className="button button--outline-teal" onClick={() => navigate(`/?site=${encodeURIComponent(selectedSite.id)}`)}><ShieldCheck size={16} /> Open Intelligence</button>
                       </div>
                     </section>
+                    <OperationalZoneManager site={selectedSite} workers={selectedWorkers} onSiteUpdated={siteUpdated} />
                   </> : null}
                 </section>
               </div>

@@ -1,39 +1,85 @@
 import {
   AlertTriangle,
+  ArrowRight,
+  Bot,
   CheckCircle2,
-  ClipboardCheck,
-  CloudSun,
-  Droplets,
+  Clock3,
   Gauge,
+  LoaderCircle,
+  MapPin,
   RefreshCw,
-  Send,
-  ShieldAlert,
+  ShieldCheck,
   Sparkles,
-  Sun,
+  ThermometerSun,
   UsersRound,
 } from 'lucide-react'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { AppShell } from '../components/layout/AppShell'
 import { Topbar } from '../components/layout/Topbar'
 import { api } from '../lib/api'
-import type { OperationalPlan, RiskLevel, Site } from '../types/site'
+import type {
+  OperationalApproval,
+  OperationalHeatPlan,
+  OperationalPlannerOption,
+  Site,
+  WorkerOperationalDecision,
+} from '../types/site'
 
-function riskLabel(level: RiskLevel) {
-  return level.charAt(0).toUpperCase() + level.slice(1)
+const DEFAULT_OFFSETS = [1, 3, 6, 9, 12]
+
+function temp(value?: number | null) {
+  if (value == null) return '—'
+  const fahrenheit = value * 9 / 5 + 32
+  return `${value.toFixed(1)}°C · ${fahrenheit.toFixed(0)}°F`
 }
 
-function formatObservedAt(value?: string | null) {
+function timeLabel(value?: string | null) {
   if (!value) return 'Not available'
   const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return 'Verified observation'
+  if (Number.isNaN(date.getTime())) return value
   return date.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
 }
 
 function sourceLabel(source?: 'fortyguard' | 'nws' | null) {
   if (source === 'fortyguard') return 'FortyGuard'
-  if (source === 'nws') return 'National Weather Service'
-  return 'No verified source'
+  if (source === 'nws') return 'NWS atmospheric context'
+  return 'No atmospheric context'
+}
+
+function optionTone(option: OperationalPlannerOption) {
+  if (option.status === 'verified' && option.deltaC != null && option.deltaC < 0) return 'better'
+  if (option.status === 'verified') return 'verified'
+  if (option.status === 'not_applicable') return 'neutral'
+  return 'unavailable'
+}
+
+function reduction(option: OperationalPlannerOption) {
+  if (option.deltaC == null) return null
+  if (option.deltaC < 0) return `${Math.abs(option.deltaC).toFixed(1)}°C lower`
+  if (option.deltaC > 0) return `${option.deltaC.toFixed(1)}°C higher`
+  return 'Same sampled temperature'
+}
+
+function selectedOption(decision: WorkerOperationalDecision) {
+  if (decision.recommendedChoice === 'better_time') return decision.betterTime
+  if (decision.recommendedChoice === 'better_place') return decision.betterPlace
+  if (decision.recommendedChoice === 'now') return decision.now
+  return null
+}
+
+function OptionCard({ option, active }: { option: OperationalPlannerOption; active: boolean }) {
+  const delta = reduction(option)
+  return (
+    <article className={`op-option op-option--${optionTone(option)}${active ? ' op-option--active' : ''}`}>
+      <div className="op-option__top"><span>{option.kind === 'now' ? 'NOW' : option.kind === 'better_time' ? 'BETTER TIME' : 'BETTER PLACE'}</span>{active && <strong><Sparkles size={13} /> Recommended</strong>}</div>
+      <h3>{option.kind === 'better_place' && option.zoneName ? option.zoneName : option.label}</h3>
+      <div className="op-option__temperature">{temp(option.temperatureC)}</div>
+      {delta && <span className={`op-option__delta${option.deltaC != null && option.deltaC < 0 ? ' op-option__delta--good' : ''}`}>{delta}</span>}
+      <p>{option.detail}</p>
+      <small>{option.sampledAt ? timeLabel(option.sampledAt) : option.status === 'unavailable' ? 'No verified sample' : 'No qualifying alternative'}</small>
+    </article>
+  )
 }
 
 export function GeneratePlanPage() {
@@ -41,55 +87,104 @@ export function GeneratePlanPage() {
   const [searchParams] = useSearchParams()
   const [sites, setSites] = useState<Site[]>([])
   const [siteId, setSiteId] = useState(searchParams.get('site') ?? '')
-  const [plan, setPlan] = useState<OperationalPlan | null>(null)
+  const [plan, setPlan] = useState<OperationalHeatPlan | null>(null)
   const [loadingSites, setLoadingSites] = useState(true)
   const [generating, setGenerating] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [approved, setApproved] = useState(false)
-  const [deliveryMessage, setDeliveryMessage] = useState<string | null>(null)
+  const [resolution, setResolution] = useState<60 | 80 | 100>(100)
+  const [minImprovement, setMinImprovement] = useState(1)
+  const [offsets, setOffsets] = useState<number[]>(DEFAULT_OFFSETS)
+  const [approvals, setApprovals] = useState<Record<string, OperationalApproval>>({})
+  const [approvalBusy, setApprovalBusy] = useState<string | null>(null)
 
   useEffect(() => {
     const controller = new AbortController()
     api.listSites(controller.signal)
       .then((loaded) => {
-        setSites(loaded)
-        const preferred = loaded.some((site) => site.id === siteId) ? siteId : loaded[0]?.id ?? ''
-        setSiteId(preferred)
-      })
-      .catch((err: unknown) => {
         if (controller.signal.aborted) return
-        setError(err instanceof Error ? err.message : 'Could not load sites.')
+        setSites(loaded)
+        setSiteId((current) => loaded.some((site) => site.id === current) ? current : loaded[0]?.id ?? '')
       })
+      .catch((err: unknown) => { if (!controller.signal.aborted) setError(err instanceof Error ? err.message : 'Could not load sites.') })
       .finally(() => { if (!controller.signal.aborted) setLoadingSites(false) })
     return () => controller.abort()
   }, [])
 
-  const generate = useCallback(async (selectedId: string) => {
-    if (!selectedId) return
-    setGenerating(true)
-    setError(null)
-    setDeliveryMessage(null)
-    try {
-      const next = await api.generatePlan(selectedId)
-      setPlan(next)
-      setApproved(false)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not generate the operational plan.')
-    } finally {
-      setGenerating(false)
-    }
-  }, [])
-
-  useEffect(() => {
-    if (siteId) void generate(siteId)
-  }, [siteId, generate])
-
   const selectedSite = sites.find((site) => site.id === siteId) ?? null
-  const generatedLabel = useMemo(() => plan ? formatObservedAt(plan.generatedAt) : 'Not generated', [plan])
+  const approvedZones = selectedSite?.zones.filter((zone) => zone.operationalApproved) ?? []
+  const generatedLabel = useMemo(() => plan ? timeLabel(plan.generatedAt) : 'Not run yet', [plan])
 
   const changeSite = (nextId: string) => {
     setSiteId(nextId)
+    setPlan(null)
+    setApprovals({})
+    setError(null)
     navigate(`/plan?site=${encodeURIComponent(nextId)}`, { replace: true })
+  }
+
+  const toggleOffset = (hour: number) => {
+    setOffsets((current) => current.includes(hour) ? current.filter((item) => item !== hour) : [...current, hour].sort((a, b) => a - b))
+    setPlan(null)
+    setApprovals({})
+  }
+
+  const runPlanner = async () => {
+    if (!siteId || !offsets.length) return
+    setGenerating(true)
+    setError(null)
+    setApprovals({})
+    try {
+      const response = await api.generateOperationalPlanner(siteId, {
+        offsetsHours: offsets,
+        granularityMeters: resolution,
+        minImprovementC: minImprovement,
+      })
+      setPlan(response)
+      setSites((current) => current.map((site) => site.id === response.site.id ? response.site : site))
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Operational planner could not complete.')
+    } finally {
+      setGenerating(false)
+    }
+  }
+
+  const approve = async (decision: WorkerOperationalDecision) => {
+    if (!plan || decision.recommendedChoice === 'review') return
+    const option = selectedOption(decision)
+    if (!option) return
+    setApprovalBusy(decision.workerId)
+    setError(null)
+    try {
+      const approval = await api.approveOperationalDecision(plan.site.id, {
+        workerId: decision.workerId,
+        choice: decision.recommendedChoice,
+        targetTime: option.sampledAt,
+        targetZoneId: option.zoneId,
+        baselineTemperatureC: decision.now.temperatureC,
+        expectedTemperatureC: option.temperatureC,
+        expectedReductionC: decision.now.temperatureC != null && option.temperatureC != null ? decision.now.temperatureC - option.temperatureC : undefined,
+      })
+      setApprovals((current) => ({ ...current, [decision.workerId]: approval }))
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not record supervisor approval.')
+    } finally {
+      setApprovalBusy(null)
+    }
+  }
+
+  const verify = async (decision: WorkerOperationalDecision) => {
+    const approval = approvals[decision.workerId]
+    if (!approval || !plan) return
+    setApprovalBusy(decision.workerId)
+    setError(null)
+    try {
+      const verified = await api.verifyOperationalDecision(plan.site.id, approval.id)
+      setApprovals((current) => ({ ...current, [decision.workerId]: verified }))
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Fresh verification could not complete.')
+    } finally {
+      setApprovalBusy(null)
+    }
   }
 
   return (
@@ -97,125 +192,94 @@ export function GeneratePlanPage() {
       <Topbar
         sites={sites}
         selectedSiteId={siteId || null}
-        observedAt={plan?.inputs.observedAt}
+        observedAt={plan?.generatedAt}
         onSiteChange={changeSite}
-        pageTitle="Generate Plan"
-        pageSubtitle="Worker-specific operational heat safety plan generated from verified site conditions and saved worker exposure context."
+        pageTitle="Operational Heat Planner"
+        pageSubtitle="Compare NOW vs BETTER TIME vs BETTER PLACE for each worker using FortyGuard spatial evidence and supervisor-approved zones."
         showAddSite={false}
       />
 
-      <div className="plan-page">
+      <div className="op-page">
         {loadingSites ? (
-          <div className="plan-loading panel"><RefreshCw className="plan-spin" size={24} /><div><strong>Loading planning context</strong><p>Reading sites and worker assignments…</p></div></div>
+          <div className="plan-loading panel"><RefreshCw className="plan-spin" size={24} /><div><strong>Loading planning context</strong><p>Reading sites, workers and approved zones…</p></div></div>
         ) : !sites.length ? (
-          <div className="plan-loading panel"><ClipboardCheck size={28} /><div><strong>Create a site before generating a plan</strong><p>The plan engine needs a site boundary and worker profiles.</p></div><button className="button button--primary" onClick={() => navigate('/')}>Go to Home</button></div>
-        ) : generating && !plan ? (
-          <div className="plan-loading panel"><Sparkles className="plan-spin" size={26} /><div><strong>Building worker-specific plan</strong><p>Checking verified conditions, worker exposure, task intensity, shade and water access…</p></div></div>
-        ) : plan ? (
+          <div className="plan-loading panel"><MapPin size={28} /><div><strong>Create a site before planning operations</strong><p>The planner needs a site boundary, workers and FortyGuard access.</p></div><button className="button button--primary" onClick={() => navigate('/')}>Go to Home</button></div>
+        ) : (
           <>
-            <section className="plan-context panel">
-              <div><span>Selected Site</span><strong>{plan.site.name}</strong><small>{plan.site.address}</small></div>
-              <div><span>Condition Source</span><strong className="plan-source">{sourceLabel(plan.inputs.conditionSource)}</strong><small>{formatObservedAt(plan.inputs.observedAt)}</small></div>
-              <div><span>Active Workers</span><strong>{plan.inputs.workerCount}</strong><small>{plan.inputs.highExposureWorkers} high/extreme exposure</small></div>
-              <div><span>Current Conditions</span><strong>{plan.inputs.temperatureC != null ? `${plan.inputs.temperatureC.toFixed(1)}°C` : '—'}</strong><small>{plan.inputs.heatIndexC != null ? `Heat index ${plan.inputs.heatIndexC.toFixed(1)}°C` : 'No verified heat index'}</small></div>
-              <div><span>Overall Risk</span><strong className={`plan-risk-text plan-risk-text--${plan.overallRisk}`}>{riskLabel(plan.overallRisk)}</strong><small>{plan.planStatus === 'ready' ? 'Operational controls ready' : 'Review limited inputs'}</small></div>
-              <div><span>Plan Status</span><strong className="plan-ready"><CheckCircle2 size={16} /> {approved ? 'Approved' : 'Plan ready'}</strong><small>{generatedLabel}</small></div>
+            <section className="op-setup panel">
+              <div className="op-setup__intro">
+                <span className="plan-section-label">FORTYGUARD DECISION SCAN</span>
+                <h2>Aaj workers ko kab aur kahan kaam karna chahiye?</h2>
+                <p>One scan is shared across every worker. HeatShield samples the current site and selected future windows, then compares only supervisor-approved operational zones.</p>
+              </div>
+              <div className="op-setup__stats">
+                <div><span>Site</span><strong>{selectedSite?.name}</strong></div>
+                <div><span>Approved zones</span><strong>{approvedZones.length}</strong></div>
+                <div><span>Future windows</span><strong>{offsets.length}</strong></div>
+                <div><span>Provider jobs</span><strong>Up to {offsets.length + 1}</strong></div>
+              </div>
+              <div className="op-controls">
+                <label><span>FortyGuard resolution</span><select value={resolution} onChange={(event) => { setResolution(Number(event.target.value) as 60 | 80 | 100); setPlan(null) }}><option value={60}>60 m · detailed</option><option value={80}>80 m</option><option value={100}>100 m · efficient</option></select></label>
+                <label><span>Minimum improvement</span><select value={minImprovement} onChange={(event) => { setMinImprovement(Number(event.target.value)); setPlan(null) }}><option value={0.5}>0.5°C</option><option value={1}>1.0°C</option><option value={2}>2.0°C</option><option value={3}>3.0°C</option></select></label>
+                <div className="op-offsets"><span>Compare future</span><div>{DEFAULT_OFFSETS.map((hour) => <button type="button" key={hour} className={offsets.includes(hour) ? 'active' : ''} onClick={() => toggleOffset(hour)}>+{hour}h</button>)}</div></div>
+                <button className="button button--primary op-run" type="button" disabled={generating || !offsets.length} onClick={() => void runPlanner()}>{generating ? <LoaderCircle className="plan-spin" size={17} /> : <Sparkles size={17} />}{generating ? 'Scanning FortyGuard…' : plan ? 'Run Fresh Scan' : 'Run FortyGuard Planner'}</button>
+              </div>
+              {!approvedZones.length && <div className="op-zone-warning"><ShieldCheck size={18} /><div><strong>BETTER PLACE needs approved zones</strong><p>Add task-compatible zones on the Sites screen. HeatShield will never suggest a random location.</p></div><button type="button" className="button button--secondary" onClick={() => navigate(`/sites?site=${encodeURIComponent(siteId)}`)}>Configure Zones</button></div>}
             </section>
 
-            {plan.inputs.conditionSource === 'nws' && (
-              <section className="plan-source-notice panel">
-                <CloudSun size={20} />
-                <div><strong>Live conditions are coming from NWS</strong><p>FortyGuard thermal tiles are currently unavailable. This plan does not invent site hotspots or spatial temperature differences; worker controls use verified atmospheric conditions plus recorded exposure context.</p></div>
-              </section>
-            )}
+            {generating && !plan && <div className="plan-loading panel"><ThermometerSun className="plan-spin" size={26} /><div><strong>Building worker-specific thermal choices</strong><p>Submitting shared site scans, spatially joining worker coordinates, and comparing approved zones…</p></div></div>}
 
-            <div className="plan-layout">
-              <div className="plan-main-column">
-                <section className="plan-risk-card panel">
-                  <div className={`plan-risk-badge plan-risk-badge--${plan.overallRisk}`}><ShieldAlert size={27} /><div><strong>{riskLabel(plan.overallRisk)}</strong><span>Overall operational risk</span></div></div>
-                  <div className="plan-risk-copy"><span className="plan-section-label">Operational Risk Summary</span><h2>{plan.riskHeadline}</h2><p>{plan.riskSummary}</p></div>
+            {plan && (
+              <>
+                <section className="op-evidence-strip panel">
+                  <div><span><ShieldCheck size={15} /> FortyGuard scans</span><strong>{plan.providerRequestCount}</strong><small>Shared across {plan.workers.length} worker{plan.workers.length === 1 ? '' : 's'}</small></div>
+                  <div><span><Gauge size={15} /> Heat-index context</span><strong>{plan.conditionHeatIndexC != null ? temp(plan.conditionHeatIndexC) : '—'}</strong><small>{sourceLabel(plan.conditionSource)}</small></div>
+                  <div><span><MapPin size={15} /> Approved zones</span><strong>{plan.approvedZoneCount}</strong><small>Only these can become Better Place</small></div>
+                  <div><span><Bot size={15} /> Decision mode</span><strong>{plan.agentMode === 'deepseek_assisted' ? 'DeepSeek assisted' : 'Deterministic'}</strong><small>Temperatures and choices remain evidence-bound</small></div>
+                  <div><span><Clock3 size={15} /> Generated</span><strong>{generatedLabel}</strong><small>{plan.timezoneName}</small></div>
                 </section>
 
-                <section className="plan-worker-card panel">
-                  <div className="plan-card-heading"><div><span className="plan-section-label">PRIMARY ACTION PLAN</span><h2>Worker-Specific Action Plan</h2></div><span>{plan.workers.length} active worker{plan.workers.length === 1 ? '' : 's'}</span></div>
-                  {!plan.workers.length ? (
-                    <div className="plan-empty-workers"><UsersRound size={22} /><div><strong>No active workers assigned</strong><p>Add workers with task and exposure details before approving a plan.</p></div></div>
-                  ) : (
-                    <div className="plan-worker-table-wrap">
-                      <table className="plan-worker-table">
-                        <thead><tr><th>Worker</th><th>Role / Area</th><th>Risk</th><th>Current Issue</th><th>Recommended Action</th><th>Window</th></tr></thead>
-                        <tbody>{plan.workers.map((worker) => (
-                          <tr key={worker.workerId}>
-                            <td><strong>{worker.workerName}</strong></td>
-                            <td><strong>{worker.role}</strong><small>{worker.area}</small></td>
-                            <td><span className={`plan-risk-pill plan-risk-pill--${worker.riskLevel}`}>{worker.riskLevel}</span></td>
-                            <td>{worker.currentIssue}</td>
-                            <td><strong className="plan-action-copy">{worker.recommendedAction}</strong><small>{worker.rationale}</small></td>
-                            <td>{worker.timeWindow}</td>
-                          </tr>
-                        ))}</tbody>
-                      </table>
-                    </div>
-                  )}
-                </section>
+                {plan.warnings.length > 0 && <section className="op-warnings panel"><AlertTriangle size={18} /><div>{plan.warnings.slice(0, 4).map((warning) => <p key={warning}>{warning}</p>)}</div></section>}
 
-                <div className="plan-bottom-grid">
-                  <section className="plan-timeline panel">
-                    <div className="plan-card-heading"><div><span className="plan-section-label">SHIFT CONTROL</span><h2>AI Plan Timeline</h2></div></div>
-                    <div className="plan-timeline-list">{plan.timeline.map((item, index) => (
-                      <div className="plan-timeline-item" key={`${item.time}-${item.title}`}>
-                        <span className="plan-timeline-time">{item.time}</span><span className="plan-timeline-dot" />
-                        <div><strong>{item.title}</strong><p>{item.detail}</p></div><span className={`plan-category plan-category--${item.category}`}>{item.category.replace('_', ' ')}</span>
-                        {index < plan.timeline.length - 1 && <span className="plan-timeline-line" />}
+                <section className="op-workers">
+                  <div className="op-workers__heading"><div><span className="plan-section-label">WORKER-BY-WORKER DECISIONS</span><h2>Now vs Better Time vs Better Place</h2></div><span>{plan.workers.length} active worker{plan.workers.length === 1 ? '' : 's'}</span></div>
+
+                  {!plan.workers.length ? <div className="plan-empty-workers panel"><UsersRound size={22} /><div><strong>No active workers assigned</strong><p>Add worker task, shift, workload and exact map location before running the planner.</p></div></div> : plan.workers.map((decision) => {
+                    const approval = approvals[decision.workerId]
+                    const option = selectedOption(decision)
+                    return <article className="op-worker panel" key={decision.workerId}>
+                      <header className="op-worker__header">
+                        <div className="op-worker__identity"><span>{decision.workerName.split(' ').map((part) => part[0]).slice(0, 2).join('')}</span><div><h3>{decision.workerName}</h3><p>{decision.role} · {decision.task} · {decision.currentArea}</p></div></div>
+                        <div className="op-worker__context"><span>{decision.workload ?? 'workload n/a'}</span><span>{decision.sunExposure ?? 'sun exposure n/a'}</span>{decision.heatIndexC != null && <span>Heat index {decision.heatIndexC.toFixed(1)}°C</span>}</div>
+                      </header>
+
+                      <div className="op-options">
+                        <OptionCard option={decision.now} active={decision.recommendedChoice === 'now'} />
+                        <OptionCard option={decision.betterTime} active={decision.recommendedChoice === 'better_time'} />
+                        <OptionCard option={decision.betterPlace} active={decision.recommendedChoice === 'better_place'} />
                       </div>
-                    ))}</div>
-                  </section>
 
-                  <section className="plan-site-actions panel">
-                    <div className="plan-card-heading"><div><span className="plan-section-label">SITE CONTROLS</span><h2>Recommended Site Actions</h2></div></div>
-                    <div className="plan-action-grid">{plan.siteActions.map((action) => (
-                      <article key={action.id}><span className={`plan-priority plan-priority--${action.priority}`}>{action.priority}</span><strong>{action.title}</strong><p>{action.detail}</p></article>
-                    ))}</div>
-                  </section>
-                </div>
-              </div>
+                      <div className="op-decision">
+                        <div className="op-decision__icon"><Sparkles size={19} /></div>
+                        <div className="op-decision__copy"><span>HEATSHIELD RECOMMENDATION</span><strong>{decision.recommendation}</strong><p>{decision.rationale}</p>{decision.evidenceWarnings.length > 0 && <small>{decision.evidenceWarnings.join(' · ')}</small>}</div>
+                        <div className="op-decision__actions">
+                          {decision.recommendedChoice === 'review' ? <button className="button button--secondary" type="button" disabled>Manual review required</button> : approval ? <>
+                            <span className={`op-approval-status op-approval-status--${approval.status}`}><CheckCircle2 size={15} /> {approval.status.replace('_', ' ')}</span>
+                            <button className="button button--secondary" type="button" disabled={approvalBusy === decision.workerId} onClick={() => void verify(decision)}>{approvalBusy === decision.workerId ? <LoaderCircle className="plan-spin" size={15} /> : <RefreshCw size={15} />} Verify with fresh FortyGuard</button>
+                          </> : <button className="button button--primary" type="button" disabled={approvalBusy === decision.workerId || !option} onClick={() => void approve(decision)}>{approvalBusy === decision.workerId ? <LoaderCircle className="plan-spin" size={15} /> : <ShieldCheck size={15} />} Approve {decision.recommendedChoice.replace('_', ' ')}</button>}
+                        </div>
+                      </div>
 
-              <aside className="plan-side-column">
-                <section className="plan-inputs panel">
-                  <div className="plan-card-heading"><div><span className="plan-section-label">TRACEABLE INPUTS</span><h2>Plan Inputs</h2></div></div>
-                  <dl>
-                    <div><dt><CloudSun size={15} /> Conditions</dt><dd>{sourceLabel(plan.inputs.conditionSource)}</dd></div>
-                    <div><dt><Gauge size={15} /> Heat Index</dt><dd>{plan.inputs.heatIndexC != null ? `${plan.inputs.heatIndexC.toFixed(1)}°C` : '—'}</dd></div>
-                    <div><dt><Droplets size={15} /> Humidity</dt><dd>{plan.inputs.humidityPercent != null ? `${plan.inputs.humidityPercent.toFixed(0)}%` : '—'}</dd></div>
-                    <div><dt><UsersRound size={15} /> Workers</dt><dd>{plan.inputs.workerCount}</dd></div>
-                    <div><dt><AlertTriangle size={15} /> High Exposure</dt><dd>{plan.inputs.highExposureWorkers}</dd></div>
-                    <div><dt><Sun size={15} /> Direct Sun</dt><dd>{plan.inputs.directSunWorkers}</dd></div>
-                    <div><dt><ShieldAlert size={15} /> Heavy Work</dt><dd>{plan.inputs.heavyWorkWorkers}</dd></div>
-                    <div><dt><ClipboardCheck size={15} /> FortyGuard Thermal</dt><dd>{plan.inputs.thermalStatus.replace('_', ' ')}</dd></div>
-                  </dl>
+                      {approval?.verificationMessage && <div className="op-verification"><ArrowRight size={16} /><div><strong>{approval.status === 'verified' ? `Verified ${temp(approval.verifiedTemperatureC)}` : 'Verification status'}</strong><p>{approval.verificationMessage}</p>{approval.actualReductionC != null && <span>Actual reduction: {approval.actualReductionC.toFixed(1)}°C</span>}</div></div>}
+                    </article>
+                  })}
                 </section>
-
-                <section className="plan-reasoning panel">
-                  <div className="plan-card-heading"><div><span className="plan-section-label">DECISION EXPLANATION</span><h2>Agent Reasoning</h2></div></div>
-                  <p>{plan.reasoning}</p>
-                  <div className="plan-factor-list">{plan.reasoningFactors.map((factor) => <span key={factor}>{factor}</span>)}</div>
-                </section>
-              </aside>
-            </div>
-
-            <section className="plan-actions-bar panel">
-              <div><span>Generated</span><strong>{generatedLabel}</strong>{deliveryMessage && <small>{deliveryMessage}</small>}</div>
-              <div className="plan-actions-bar__buttons">
-                <button className="button" type="button" onClick={() => void generate(siteId)} disabled={generating}><RefreshCw size={17} /> {generating ? 'Regenerating…' : 'Regenerate Plan'}</button>
-                <button className={`button ${approved ? 'button--primary' : ''}`} type="button" onClick={() => setApproved((value) => !value)}><CheckCircle2 size={17} /> {approved ? 'Approved' : 'Approve Plan'}</button>
-                <button className="button button--primary" type="button" onClick={() => setDeliveryMessage('Team delivery is not configured yet; no message was sent.')}><Send size={17} /> Send to Team</button>
-              </div>
-            </section>
+              </>
+            )}
           </>
-        ) : null}
+        )}
 
-        {error && <div className="form-error plan-error">{error}</div>}
-        {selectedSite && !plan && !generating && !error && <button className="button button--primary" onClick={() => void generate(selectedSite.id)}>Generate Plan</button>}
+        {error && <div className="form-error op-error">{error}</div>}
       </div>
     </AppShell>
   )
