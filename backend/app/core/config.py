@@ -15,8 +15,11 @@ class Settings(BaseSettings):
     database_path: str = 'heatshield.db'
 
     fortyguard_api_key: str | None = None
-    fortyguard_base_url: str | None = None
-    fortyguard_site_intelligence_path: str | None = None
+    fortyguard_base_url: str = 'https://api.fortyguard.com'
+    fortyguard_timeout_seconds: float = 30.0
+    fortyguard_poll_interval_seconds: float = 2.0
+    fortyguard_max_poll_attempts: int = 60
+    fortyguard_granularity_meters: int = 100
 
     deepseek_api_key: str | None = None
     deepseek_base_url: str = 'https://api.deepseek.com'
