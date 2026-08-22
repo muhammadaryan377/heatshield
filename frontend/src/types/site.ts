@@ -200,7 +200,7 @@ export interface OperationalPlan {
 export interface ThermalMapRequest {
   mode: 'site' | 'custom'
   polygon?: Coordinate[]
-  granularityMeters: number
+  granularityMeters: 60 | 80 | 100
 }
 
 export interface ThermalTile {
@@ -223,6 +223,64 @@ export interface ThermalMapResponse {
   hottestTileId?: string | null
   coolestTileId?: string | null
   tiles: ThermalTile[]
+  message?: string | null
+  cached: boolean
+}
+
+export interface FortyGuardProfileRequest {
+  date?: string
+  thresholdC: number
+  granularityMeters: 60 | 80 | 100
+}
+
+export interface FortyGuardLayerStatus {
+  analyticType: 'tcm' | 'time_of_measure' | 'exceedance' | 'persistence'
+  status: 'verified' | 'unavailable'
+  activityId?: string | null
+  cellCount: number
+  units?: string | null
+  minValue?: number | null
+  maxValue?: number | null
+  meanValue?: number | null
+  message?: string | null
+}
+
+export interface FortyGuardWorkerExposure {
+  workerId: string
+  workerName: string
+  role: string
+  area: string
+  evidenceStatus: 'complete' | 'partial' | 'unmatched'
+  peakTemperatureC?: number | null
+  peakHourUtc?: number | null
+  peakHourLocal?: string | null
+  hoursAboveThreshold?: number | null
+  persistenceHours?: number | null
+  thresholdC: number
+}
+
+export interface FortyGuardDailyProfile {
+  siteId: string
+  siteName: string
+  date: string
+  timezoneName: string
+  thresholdC: number
+  granularityMeters: number
+  dataStatus: 'verified' | 'partial' | 'unavailable' | 'configuration_required'
+  generatedAt: string
+  providerRequestCount: number
+  tcmCellCount: number
+  minTemperatureC?: number | null
+  meanTemperatureC?: number | null
+  maxTemperatureC?: number | null
+  peakHourUtc?: number | null
+  peakHourLocal?: string | null
+  meanHoursAboveThreshold?: number | null
+  maxHoursAboveThreshold?: number | null
+  meanPersistenceHours?: number | null
+  maxPersistenceHours?: number | null
+  layers: FortyGuardLayerStatus[]
+  workers: FortyGuardWorkerExposure[]
   message?: string | null
   cached: boolean
 }
