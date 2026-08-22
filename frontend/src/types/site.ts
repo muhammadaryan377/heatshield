@@ -23,8 +23,17 @@ export interface Site {
   status: 'active' | 'inactive'
 }
 
+export interface SiteCreate {
+  name: string
+  address: string
+  center: Coordinate
+  polygon: Coordinate[]
+  zones?: SiteZone[]
+}
+
 export interface Worker {
   id: string
+  siteId: string
   name: string
   initials: string
   role: string
@@ -34,6 +43,28 @@ export interface Worker {
   risk: RiskLevel
   lastCheckIn: string
   coordinate: Coordinate
+  task?: string | null
+  workIntensity?: 'light' | 'moderate' | 'heavy' | null
+  shiftStart?: string | null
+  shiftEnd?: string | null
+  sunExposure?: 'indoor' | 'partial' | 'direct' | null
+  shadeAccess?: 'available' | 'limited' | 'none' | null
+  waterAccess?: boolean | null
+}
+
+export interface WorkerCreate {
+  name: string
+  role: string
+  location: string
+  locationId: string
+  coordinate: Coordinate
+  task?: string
+  workIntensity?: 'light' | 'moderate' | 'heavy'
+  shiftStart?: string
+  shiftEnd?: string
+  sunExposure?: 'indoor' | 'partial' | 'direct'
+  shadeAccess?: 'available' | 'limited' | 'none'
+  waterAccess?: boolean
 }
 
 export interface EnvironmentalMetric {
@@ -58,38 +89,40 @@ export interface HeatSpot {
 
 export interface SiteIntelligence {
   site: Site
-  observedAt: string
+  observedAt?: string | null
   isLive: boolean
-  conditions: {
+  dataStatus: 'live' | 'configuration_required' | 'provider_unavailable'
+  statusMessage?: string | null
+  conditions?: {
     temperatureC: number
     humidityPercent: number
     heatIndexC: number
     feelsLikeC: number
-    windKph: number
-    windDirection: string
-    weatherLabel: string
-  }
-  deltas: {
-    temperatureC: number
-    humidityPercent: number
-    heatIndexC: number
-    comparedAt: string
-  }
-  risk: {
+    windKph?: number | null
+    windDirection?: string | null
+    weatherLabel?: string | null
+  } | null
+  deltas?: {
+    temperatureC?: number | null
+    humidityPercent?: number | null
+    heatIndexC?: number | null
+    comparedAt?: string | null
+  } | null
+  risk?: {
     level: RiskLevel
     summary: string
     detail: string
-    peakWindowStart: string
-    peakWindowEnd: string
-  }
+    peakWindowStart?: string | null
+    peakWindowEnd?: string | null
+  } | null
   workers: Worker[]
   highExposureCount: number
   forecast: ForecastPoint[]
   hotspots: HeatSpot[]
-  nextAction: {
+  nextAction?: {
     title: string
     detail: string
     actionLabel: string
     dueInMinutes: number
-  }
+  } | null
 }
