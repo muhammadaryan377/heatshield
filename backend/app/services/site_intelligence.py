@@ -2,11 +2,9 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-import httpx
-
 from app.core.config import Settings
 from app.schemas import Conditions, NextAction, Risk, SiteIntelligence
-from app.services.fortyguard import FortyGuardClient, FortyGuardConfigurationError
+from app.services.fortyguard import FortyGuardAPIError, FortyGuardClient, FortyGuardConfigurationError
 from app.services.store import HeatShieldStore
 
 
@@ -21,24 +19,21 @@ class SiteIntelligenceService:
         workers = self.store.list_workers(site_id)
 
         try:
-            observation = await self.fortyguard.fetch_observation(
-                lat=site.center.lat,
-                lng=site.center.lng,
-            )
+            observation = await self.fortyguard.fetch_observation(site=site)
         except FortyGuardConfigurationError:
             return SiteIntelligence(
                 site=site,
                 workers=workers,
                 dataStatus='configuration_required',
-                statusMessage='FortyGuard is not configured for this environment yet.',
+                statusMessage='FortyGuard API key is not configured on the HeatShield backend.',
                 highExposureCount=sum(worker.risk in ('high', 'extreme') for worker in workers),
             )
-        except (httpx.HTTPError, ValueError, TypeError):
+        except (FortyGuardAPIError, ValueError, TypeError):
             return SiteIntelligence(
                 site=site,
                 workers=workers,
                 dataStatus='provider_unavailable',
-                statusMessage='Live environmental data is temporarily unavailable. No estimated values are being shown.',
+                statusMessage='FortyGuard did not return a verified observation for this site/time. HeatShield is not substituting estimated values.',
                 highExposureCount=sum(worker.risk in ('high', 'extreme') for worker in workers),
             )
 
@@ -64,7 +59,7 @@ class SiteIntelligenceService:
         if workers and level in ('medium', 'high', 'extreme'):
             next_action = NextAction(
                 title='Send hydration reminder to active workers',
-                detail='Recommended from the latest verified heat conditions.',
+                detail='Recommended from the latest verified FortyGuard conditions.',
                 actionLabel='Send Reminder',
                 dueInMinutes=15,
             )
@@ -79,7 +74,7 @@ class SiteIntelligenceService:
                 humidityPercent=observation.humidity_percent,
                 heatIndexC=observation.heat_index_c,
                 feelsLikeC=observation.apparent_temperature_c,
-                weatherLabel='Verified live observation',
+                weatherLabel='FortyGuard verified observation',
             ),
             risk=Risk(level=level, summary=summary, detail=detail),
             workers=workers,
