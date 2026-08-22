@@ -2,10 +2,13 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
+from functools import lru_cache
 from typing import Any
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import httpx
+from timezonefinder import TimezoneFinder
 
 from app.core.config import Settings
 from app.schemas import Site
@@ -19,22 +22,41 @@ class FortyGuardAPIError(RuntimeError):
     pass
 
 
+class FortyGuardNoTilesError(FortyGuardAPIError):
+    """A completed heatmap job had no temperature cells for the requested hour."""
+
+
 @dataclass(slots=True)
 class FortyGuardObservation:
     temperature_c: float
     humidity_percent: float
     heat_index_c: float
     apparent_temperature_c: float
-    observed_at: str | None
+    observed_at: str
+    source_age_hours: int
+    timezone_name: str
     provider_payload: dict[str, Any]
+
+
+@lru_cache(maxsize=1)
+def _timezone_finder() -> TimezoneFinder:
+    # Offline coordinate -> IANA timezone lookup. No Google/provider request is
+    # needed and the site's clock never depends on the HeatShield server clock.
+    return TimezoneFinder(in_memory=True)
+
+
+# App-process cache. Site intelligence is read frequently by the UI; a short
+# cache prevents refreshes from repeatedly spending completed provider jobs.
+_OBSERVATION_CACHE: dict[str, tuple[datetime, FortyGuardObservation]] = {}
 
 
 class FortyGuardClient:
     """Server-side client for the actual FortyGuard asynchronous API contract.
 
     HeatShield first requests a TCM heatmap to obtain provider-verified site
-    temperature, then supplies that temperature to /v1/env_params. Both calls
-    are asynchronous jobs resolved through /v1/status/{activity_id}.
+    temperature, then supplies that exact temperature and timestamp to
+    /v1/env_params. Both calls are asynchronous jobs resolved through
+    /v1/status/{activity_id}.
     """
 
     def __init__(self, settings: Settings):
@@ -157,7 +179,11 @@ class FortyGuardClient:
             if not all(isinstance(value, (int, float)) for value in (x1, y1, x2, y2)):
                 return False
             cross = (longitude - x1) * (y2 - y1) - (latitude - y1) * (x2 - x1)
-            if abs(cross) <= epsilon and min(x1, x2) - epsilon <= longitude <= max(x1, x2) + epsilon and min(y1, y2) - epsilon <= latitude <= max(y1, y2) + epsilon:
+            if (
+                abs(cross) <= epsilon
+                and min(x1, x2) - epsilon <= longitude <= max(x1, x2) + epsilon
+                and min(y1, y2) - epsilon <= latitude <= max(y1, y2) + epsilon
+            ):
                 return True
 
         inside = False
@@ -200,7 +226,6 @@ class FortyGuardClient:
         value = properties.get('average_temperature', properties.get('temperature'))
         if isinstance(value, (int, float)) and not isinstance(value, bool):
             return float(value)
-        # Some FortyGuard responses serialize numeric properties as JSON strings.
         if isinstance(value, str):
             try:
                 return float(value)
@@ -217,7 +242,7 @@ class FortyGuardClient:
         if not isinstance(features, list):
             raise FortyGuardAPIError('FortyGuard heatmap contains no spatial features.')
         if not features:
-            raise FortyGuardAPIError(
+            raise FortyGuardNoTilesError(
                 'FortyGuard completed the heatmap request but returned zero temperature tiles.'
             )
 
@@ -241,6 +266,11 @@ class FortyGuardClient:
         candidate = value[index] if isinstance(value, list) and len(value) > index else value
         if isinstance(candidate, (int, float)) and not isinstance(candidate, bool):
             return float(candidate)
+        if isinstance(candidate, str):
+            try:
+                return float(candidate)
+            except ValueError:
+                return None
         return None
 
     @classmethod
@@ -260,47 +290,140 @@ class FortyGuardClient:
         observed_at = str(timestamps[0]) if timestamps else None
         return humidity, heat_index, apparent, observed_at, {'location': location, 'metadata': metadata}
 
-    async def fetch_observation(self, *, site: Site) -> FortyGuardObservation:
-        _ = self.headers  # Validate configuration before any work is performed.
-        # FortyGuard heatmap hours are interpreted in UTC. Using the backend's
-        # local clock (for example Asia/Karachi) can request a future hour for a
-        # US site and yield a completed heatmap with zero cells.
-        now = datetime.now(timezone.utc)
-        date_time = {
-            'start_date': now.date().isoformat(),
-            'start_time': now.strftime('%H:%M'),
+    @staticmethod
+    def _date_time(candidate: datetime) -> dict[str, Any]:
+        return {
+            'start_date': candidate.date().isoformat(),
+            'start_time': candidate.strftime('%H:%M'),
             'filter_type': 1,
         }
-        heatmap_payload = {
-            'polygon_aoi': self._geojson_polygon(site),
-            'date_time': date_time,
-            'granularity': self.settings.fortyguard_granularity_meters,
-            'analytic_type': 'tcm',
-        }
-        heatmap_activity_id = await self._submit('/v1/heatmap', heatmap_payload)
-        heatmap_result = await self._wait(heatmap_activity_id)
-        temperature, selected_feature = self._extract_temperature(heatmap_result, site)
 
+    @staticmethod
+    def _site_timezone(site: Site) -> tuple[str, ZoneInfo]:
+        timezone_name = _timezone_finder().timezone_at(lng=site.center.lng, lat=site.center.lat)
+        if not timezone_name:
+            return 'UTC', ZoneInfo('UTC')
+        try:
+            return timezone_name, ZoneInfo(timezone_name)
+        except ZoneInfoNotFoundError:
+            return 'UTC', ZoneInfo('UTC')
+
+    def _candidate_local_hours(self, site: Site, now_utc: datetime) -> tuple[str, list[datetime]]:
+        timezone_name, site_timezone = self._site_timezone(site)
+        local_now = now_utc.astimezone(site_timezone)
+        current_hour = local_now.replace(minute=0, second=0, microsecond=0)
+        fallback_count = max(0, self.settings.fortyguard_recent_hour_fallbacks)
+        return timezone_name, [
+            current_hour - timedelta(hours=offset)
+            for offset in range(fallback_count + 1)
+        ]
+
+    def _cached_observation(self, site_id: str, now_utc: datetime) -> FortyGuardObservation | None:
+        ttl = max(0, self.settings.fortyguard_cache_ttl_seconds)
+        if ttl == 0:
+            return None
+        cached = _OBSERVATION_CACHE.get(site_id)
+        if not cached:
+            return None
+        cached_at, observation = cached
+        if (now_utc - cached_at).total_seconds() <= ttl:
+            return observation
+        _OBSERVATION_CACHE.pop(site_id, None)
+        return None
+
+    async def fetch_observation(
+        self,
+        *,
+        site: Site,
+        now_utc: datetime | None = None,
+    ) -> FortyGuardObservation:
+        _ = self.headers  # Validate configuration before any work is performed.
+        request_now = now_utc or datetime.now(timezone.utc)
+        if request_now.tzinfo is None:
+            request_now = request_now.replace(tzinfo=timezone.utc)
+        request_now = request_now.astimezone(timezone.utc)
+
+        cached = self._cached_observation(site.id, request_now)
+        if cached is not None:
+            return cached
+
+        timezone_name, candidates = self._candidate_local_hours(site, request_now)
+        polygon_aoi = self._geojson_polygon(site)
+        attempted_activity_ids: list[str] = []
+
+        selected_candidate: datetime | None = None
+        selected_feature: dict[str, Any] | None = None
+        selected_result: dict[str, Any] | None = None
+        temperature: float | None = None
+        source_age_hours = 0
+
+        for age_hours, candidate in enumerate(candidates):
+            date_time = self._date_time(candidate)
+            heatmap_payload = {
+                'polygon_aoi': polygon_aoi,
+                'date_time': date_time,
+                'granularity': self.settings.fortyguard_granularity_meters,
+                'analytic_type': 'tcm',
+            }
+            activity_id = await self._submit('/v1/heatmap', heatmap_payload)
+            attempted_activity_ids.append(activity_id)
+            heatmap_result = await self._wait(activity_id)
+
+            try:
+                temperature, selected_feature = self._extract_temperature(heatmap_result, site)
+            except FortyGuardNoTilesError:
+                continue
+
+            selected_candidate = candidate
+            selected_result = heatmap_result
+            source_age_hours = age_hours
+            break
+
+        if selected_candidate is None or selected_feature is None or selected_result is None or temperature is None:
+            attempts = len(candidates)
+            raise FortyGuardAPIError(
+                f'FortyGuard returned zero temperature tiles for {attempts} recent '
+                f'{timezone_name} whole-hour request(s).'
+            )
+
+        matched_date_time = self._date_time(selected_candidate)
         environment_payload = {
             'latitude': site.center.lat,
             'longitude': site.center.lng,
             'temperature': temperature,
-            'date_time': date_time,
+            'date_time': matched_date_time,
         }
         environment_activity_id = await self._submit('/v1/env_params', environment_payload)
         environment_result = await self._wait(environment_activity_id)
         humidity, heat_index, apparent, observed_at, environment_raw = self._extract_environment(environment_result)
 
-        return FortyGuardObservation(
+        # If the environmental payload omits its own timestamp, preserve the exact
+        # site-local heatmap timestamp instead of pretending the observation is now.
+        canonical_observed_at = observed_at or selected_candidate.isoformat()
+        feature_count = len((selected_result.get('map_data') or {}).get('features') or [])
+
+        observation = FortyGuardObservation(
             temperature_c=temperature,
             humidity_percent=humidity,
             heat_index_c=heat_index,
             apparent_temperature_c=apparent,
-            observed_at=observed_at,
+            observed_at=canonical_observed_at,
+            source_age_hours=source_age_hours,
+            timezone_name=timezone_name,
             provider_payload={
-                'heatmap_activity_id': heatmap_activity_id,
+                'heatmap_activity_id': attempted_activity_ids[-1],
+                'heatmap_attempt_activity_ids': attempted_activity_ids,
                 'environment_activity_id': environment_activity_id,
+                'requested_date_time': matched_date_time,
+                'site_timezone': timezone_name,
+                'source_age_hours': source_age_hours,
+                'heatmap_feature_count': feature_count,
+                'heatmap_stats': selected_result.get('stats_data'),
                 'selected_heatmap_feature': selected_feature,
                 'environment': environment_raw,
             },
         )
+
+        if self.settings.fortyguard_cache_ttl_seconds > 0:
+            _OBSERVATION_CACHE[site.id] = (request_now, observation)
+        return observation
