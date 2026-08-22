@@ -1,6 +1,6 @@
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
 RiskLevel = Literal['low', 'medium', 'high', 'extreme']
@@ -214,6 +214,44 @@ class OperationalPlan(CamelModel):
     siteActions: list[PlanSiteAction] = Field(default_factory=list)
     reasoning: str
     reasoningFactors: list[str] = Field(default_factory=list)
+
+
+class ThermalMapRequest(CamelModel):
+    mode: Literal['site', 'custom'] = 'site'
+    polygon: list[Coordinate] | None = None
+    granularityMeters: int = Field(default=100, ge=50, le=500)
+
+    @model_validator(mode='after')
+    def validate_custom_polygon(self):
+        if self.mode == 'custom' and (self.polygon is None or len(self.polygon) < 3):
+            raise ValueError('A custom thermal area needs at least three map points.')
+        if self.polygon is not None and len(self.polygon) > 60:
+            raise ValueError('A thermal area can contain at most 60 map points.')
+        return self
+
+
+class ThermalTile(CamelModel):
+    id: str
+    temperatureC: float
+    polygon: list[Coordinate]
+
+
+class ThermalMapResponse(CamelModel):
+    siteId: str
+    mode: Literal['site', 'custom']
+    dataStatus: Literal['verified', 'unavailable', 'configuration_required']
+    observedAt: str | None = None
+    timezoneName: str | None = None
+    granularityMeters: int
+    tileCount: int = 0
+    minTemperatureC: float | None = None
+    maxTemperatureC: float | None = None
+    meanTemperatureC: float | None = None
+    hottestTileId: str | None = None
+    coolestTileId: str | None = None
+    tiles: list[ThermalTile] = Field(default_factory=list)
+    message: str | None = None
+    cached: bool = False
 
 
 class ActionAccepted(CamelModel):
