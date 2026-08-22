@@ -2,6 +2,7 @@ import {
   BarChart3,
   ClipboardList,
   CircleHelp,
+  History,
   Home,
   MapPin,
   PanelLeftClose,
@@ -16,6 +17,7 @@ const navItems = [
   { to: '/workers/new', label: 'Add Worker', icon: UserPlus },
   { to: '/plan', label: 'Generate Plan', icon: ClipboardList },
   { to: '/sites', label: 'Sites', icon: MapPin },
+  { to: '/heat-history', label: 'Heat History', icon: History },
   { to: '/reports', label: 'Reports', icon: BarChart3 },
   { to: '/settings', label: 'Settings', icon: Settings },
 ]
