@@ -28,12 +28,20 @@ class SiteIntelligenceService:
                 statusMessage='FortyGuard API key is not configured on the HeatShield backend.',
                 highExposureCount=sum(worker.risk in ('high', 'extreme') for worker in workers),
             )
-        except (FortyGuardAPIError, ValueError, TypeError):
+        except FortyGuardAPIError as exc:
             return SiteIntelligence(
                 site=site,
                 workers=workers,
                 dataStatus='provider_unavailable',
-                statusMessage='FortyGuard did not return a verified observation for this site/time. HeatShield is not substituting estimated values.',
+                statusMessage=f'Live provider request failed: {exc}',
+                highExposureCount=sum(worker.risk in ('high', 'extreme') for worker in workers),
+            )
+        except (ValueError, TypeError) as exc:
+            return SiteIntelligence(
+                site=site,
+                workers=workers,
+                dataStatus='provider_unavailable',
+                statusMessage=f'HeatShield could not validate the provider response: {exc}',
                 highExposureCount=sum(worker.risk in ('high', 'extreme') for worker in workers),
             )
 
