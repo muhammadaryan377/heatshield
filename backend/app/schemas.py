@@ -3,6 +3,9 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
+RiskLevel = Literal['low', 'medium', 'high', 'extreme']
+
+
 class CamelModel(BaseModel):
     model_config = ConfigDict(populate_by_name=True, extra='ignore')
 
@@ -55,7 +58,7 @@ class Worker(CamelModel):
     location: str
     locationId: str
     status: Literal['active', 'break', 'offsite'] = 'active'
-    risk: Literal['low', 'medium', 'high', 'extreme'] = 'low'
+    risk: RiskLevel = 'low'
     lastCheckIn: str
     coordinate: Coordinate
     task: str | None = None
@@ -107,7 +110,7 @@ class Deltas(CamelModel):
 
 
 class Risk(CamelModel):
-    level: Literal['low', 'medium', 'high', 'extreme']
+    level: RiskLevel
     summary: str
     detail: str
     peakWindowStart: str | None = None
@@ -121,7 +124,7 @@ class ForecastPoint(CamelModel):
 
 class HeatSpot(CamelModel):
     id: str
-    level: Literal['low', 'medium', 'high', 'extreme']
+    level: RiskLevel
     x: float
     y: float
     radius: float
@@ -140,6 +143,12 @@ class SiteIntelligence(CamelModel):
     isLive: bool = False
     dataStatus: Literal['live', 'configuration_required', 'provider_unavailable']
     statusMessage: str | None = None
+    conditionSource: Literal['fortyguard', 'nws'] | None = None
+    conditionSourceLabel: str | None = None
+    thermalStatus: Literal['verified', 'recent_verified', 'unavailable', 'not_configured'] = 'unavailable'
+    thermalObservedAt: str | None = None
+    thermalMessage: str | None = None
+    fallbackActive: bool = False
     conditions: Conditions | None = None
     deltas: Deltas | None = None
     risk: Risk | None = None
@@ -148,6 +157,63 @@ class SiteIntelligence(CamelModel):
     forecast: list[ForecastPoint] = Field(default_factory=list)
     hotspots: list[HeatSpot] = Field(default_factory=list)
     nextAction: NextAction | None = None
+
+
+class PlanWorkerAction(CamelModel):
+    workerId: str
+    workerName: str
+    role: str
+    area: str
+    riskLevel: RiskLevel
+    currentIssue: str
+    recommendedAction: str
+    timeWindow: str
+    rationale: str
+
+
+class PlanTimelineItem(CamelModel):
+    time: str
+    title: str
+    detail: str
+    category: Literal['hydration', 'work_planning', 'rotation', 'recovery', 'assessment', 'closeout']
+
+
+class PlanSiteAction(CamelModel):
+    id: str
+    title: str
+    detail: str
+    priority: Literal['now', 'today', 'monitor']
+
+
+class PlanInputs(CamelModel):
+    conditionSource: Literal['fortyguard', 'nws'] | None = None
+    thermalStatus: str
+    observedAt: str | None = None
+    temperatureC: float | None = None
+    humidityPercent: float | None = None
+    heatIndexC: float | None = None
+    windKph: float | None = None
+    workerCount: int
+    highExposureWorkers: int
+    directSunWorkers: int
+    heavyWorkWorkers: int
+    limitedShadeWorkers: int
+
+
+class OperationalPlan(CamelModel):
+    site: Site
+    generatedAt: str
+    planStatus: Literal['ready', 'limited_data', 'no_workers']
+    agentMode: Literal['deterministic', 'deepseek_assisted'] = 'deterministic'
+    overallRisk: RiskLevel
+    riskHeadline: str
+    riskSummary: str
+    inputs: PlanInputs
+    workers: list[PlanWorkerAction] = Field(default_factory=list)
+    timeline: list[PlanTimelineItem] = Field(default_factory=list)
+    siteActions: list[PlanSiteAction] = Field(default_factory=list)
+    reasoning: str
+    reasoningFactors: list[str] = Field(default_factory=list)
 
 
 class ActionAccepted(CamelModel):
