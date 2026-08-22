@@ -6,7 +6,17 @@ from datetime import datetime, timezone
 from uuid import uuid4
 
 from app.core.config import Settings
-from app.schemas import Coordinate, Site, SiteCreate, SiteZone, Worker, WorkerCreate
+from app.schemas import (
+    Coordinate,
+    OperationalApproval,
+    OperationalApprovalRequest,
+    Site,
+    SiteCreate,
+    SiteZone,
+    SiteZoneCreate,
+    Worker,
+    WorkerCreate,
+)
 
 
 class HeatShieldStore:
@@ -75,7 +85,27 @@ class HeatShieldStore:
                     created_at TEXT NOT NULL,
                     FOREIGN KEY(site_id) REFERENCES sites(id) ON DELETE CASCADE
                 );
+                CREATE TABLE IF NOT EXISTS operational_approvals (
+                    id TEXT PRIMARY KEY,
+                    site_id TEXT NOT NULL,
+                    worker_id TEXT NOT NULL,
+                    choice TEXT NOT NULL,
+                    target_time TEXT,
+                    target_zone_id TEXT,
+                    baseline_temperature_c REAL,
+                    expected_temperature_c REAL,
+                    expected_reduction_c REAL,
+                    status TEXT NOT NULL DEFAULT 'pending_verification',
+                    created_at TEXT NOT NULL,
+                    verified_at TEXT,
+                    verified_temperature_c REAL,
+                    actual_reduction_c REAL,
+                    verification_message TEXT,
+                    FOREIGN KEY(site_id) REFERENCES sites(id) ON DELETE CASCADE,
+                    FOREIGN KEY(worker_id) REFERENCES workers(id) ON DELETE CASCADE
+                );
                 CREATE INDEX IF NOT EXISTS idx_workers_site_id ON workers(site_id);
+                CREATE INDEX IF NOT EXISTS idx_operational_approvals_site_id ON operational_approvals(site_id);
             ''')
             self._ensure_worker_columns(db)
 
@@ -103,6 +133,34 @@ class HeatShieldStore:
             supervisor=row['supervisor'], notes=row['notes'],
         )
 
+    @staticmethod
+    def _approval_from_row(row: sqlite3.Row) -> OperationalApproval:
+        return OperationalApproval(
+            id=row['id'], siteId=row['site_id'], workerId=row['worker_id'], choice=row['choice'],
+            targetTime=row['target_time'], targetZoneId=row['target_zone_id'],
+            baselineTemperatureC=row['baseline_temperature_c'], expectedTemperatureC=row['expected_temperature_c'],
+            expectedReductionC=row['expected_reduction_c'], status=row['status'], createdAt=row['created_at'],
+            verifiedAt=row['verified_at'], verifiedTemperatureC=row['verified_temperature_c'],
+            actualReductionC=row['actual_reduction_c'], verificationMessage=row['verification_message'],
+        )
+
+    @staticmethod
+    def _point_in_polygon(point: Coordinate, polygon: list[Coordinate]) -> bool:
+        if len(polygon) < 3:
+            return False
+        inside = False
+        j = len(polygon) - 1
+        for i, current in enumerate(polygon):
+            previous = polygon[j]
+            if ((current.lat > point.lat) != (previous.lat > point.lat)):
+                denominator = previous.lat - current.lat
+                if abs(denominator) > 1e-12:
+                    crossing_lng = (previous.lng - current.lng) * (point.lat - current.lat) / denominator + current.lng
+                    if point.lng < crossing_lng:
+                        inside = not inside
+            j = i
+        return inside
+
     def list_sites(self) -> list[Site]:
         with self._connect() as db:
             rows = db.execute('SELECT * FROM sites ORDER BY created_at DESC').fetchall()
@@ -126,11 +184,44 @@ class HeatShieldStore:
             )
         return self.get_site(site_id)
 
+    def add_zone(self, site_id: str, payload: SiteZoneCreate) -> Site:
+        site = self.get_site(site_id)
+        if not self._point_in_polygon(payload.center, site.polygon):
+            raise ValueError('Operational zones must be placed inside the saved site boundary.')
+        zone = SiteZone(
+            id=f'zone-{uuid4().hex[:10]}',
+            name=payload.name.strip(),
+            type=payload.type,
+            center=payload.center,
+            allowedTasks=payload.allowedTasks,
+            operationalApproved=payload.operationalApproved,
+        )
+        zones = [*site.zones, zone]
+        with self._connect() as db:
+            db.execute('UPDATE sites SET zones_json = ? WHERE id = ?', (json.dumps([item.model_dump() for item in zones]), site_id))
+        return self.get_site(site_id)
+
+    def delete_zone(self, site_id: str, zone_id: str) -> Site:
+        site = self.get_site(site_id)
+        zones = [zone for zone in site.zones if zone.id != zone_id]
+        if len(zones) == len(site.zones):
+            raise FileNotFoundError(zone_id)
+        with self._connect() as db:
+            db.execute('UPDATE sites SET zones_json = ? WHERE id = ?', (json.dumps([item.model_dump() for item in zones]), site_id))
+        return self.get_site(site_id)
+
     def list_workers(self, site_id: str) -> list[Worker]:
         self.get_site(site_id)
         with self._connect() as db:
             rows = db.execute('SELECT * FROM workers WHERE site_id = ? ORDER BY created_at DESC', (site_id,)).fetchall()
         return [self._worker_from_row(row) for row in rows]
+
+    def get_worker(self, site_id: str, worker_id: str) -> Worker:
+        with self._connect() as db:
+            row = db.execute('SELECT * FROM workers WHERE id = ? AND site_id = ?', (worker_id, site_id)).fetchone()
+        if row is None:
+            raise FileNotFoundError(worker_id)
+        return self._worker_from_row(row)
 
     def create_worker(self, site_id: str, payload: WorkerCreate) -> Worker:
         self.get_site(site_id)
@@ -169,3 +260,55 @@ class HeatShieldStore:
             row = db.execute('SELECT * FROM workers WHERE id = ?', (worker_id,)).fetchone()
         assert row is not None
         return self._worker_from_row(row)
+
+    def create_operational_approval(self, site_id: str, payload: OperationalApprovalRequest) -> OperationalApproval:
+        self.get_site(site_id)
+        self.get_worker(site_id, payload.workerId)
+        site = self.get_site(site_id)
+        if payload.choice == 'better_place':
+            if not payload.targetZoneId or not any(zone.id == payload.targetZoneId and zone.operationalApproved for zone in site.zones):
+                raise ValueError('Better-place approvals require an approved site zone.')
+        approval_id = f'approval-{uuid4().hex[:12]}'
+        created_at = datetime.now(timezone.utc).isoformat()
+        with self._connect() as db:
+            db.execute(
+                '''INSERT INTO operational_approvals (
+                    id,site_id,worker_id,choice,target_time,target_zone_id,baseline_temperature_c,
+                    expected_temperature_c,expected_reduction_c,status,created_at
+                ) VALUES (?,?,?,?,?,?,?,?,?,'pending_verification',?)''',
+                (
+                    approval_id, site_id, payload.workerId, payload.choice, payload.targetTime, payload.targetZoneId,
+                    payload.baselineTemperatureC, payload.expectedTemperatureC, payload.expectedReductionC, created_at,
+                ),
+            )
+            row = db.execute('SELECT * FROM operational_approvals WHERE id = ?', (approval_id,)).fetchone()
+        assert row is not None
+        return self._approval_from_row(row)
+
+    def get_operational_approval(self, site_id: str, approval_id: str) -> OperationalApproval:
+        with self._connect() as db:
+            row = db.execute('SELECT * FROM operational_approvals WHERE id = ? AND site_id = ?', (approval_id, site_id)).fetchone()
+        if row is None:
+            raise FileNotFoundError(approval_id)
+        return self._approval_from_row(row)
+
+    def update_operational_verification(
+        self,
+        site_id: str,
+        approval_id: str,
+        *,
+        status: str,
+        verified_temperature_c: float | None,
+        actual_reduction_c: float | None,
+        message: str,
+    ) -> OperationalApproval:
+        self.get_operational_approval(site_id, approval_id)
+        verified_at = datetime.now(timezone.utc).isoformat()
+        with self._connect() as db:
+            db.execute(
+                '''UPDATE operational_approvals
+                   SET status=?, verified_at=?, verified_temperature_c=?, actual_reduction_c=?, verification_message=?
+                   WHERE id=? AND site_id=?''',
+                (status, verified_at, verified_temperature_c, actual_reduction_c, message, approval_id, site_id),
+            )
+        return self.get_operational_approval(site_id, approval_id)
