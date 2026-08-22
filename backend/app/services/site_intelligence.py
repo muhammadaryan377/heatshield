@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
 from typing import Literal
 
 from app.core.config import Settings
@@ -129,17 +128,30 @@ class SiteIntelligenceService:
                 dueInMinutes=15,
             )
 
+        is_live = observation.source_age_hours == 0
+        if is_live:
+            status_message = None
+            weather_label = 'FortyGuard live verified observation'
+        else:
+            hour_label = 'hour' if observation.source_age_hours == 1 else 'hours'
+            status_message = (
+                f'Current hour had no temperature tiles. Using the latest verified FortyGuard '
+                f'observation from {observation.source_age_hours} {hour_label} earlier.'
+            )
+            weather_label = 'FortyGuard recent verified observation'
+
         return SiteIntelligence(
             site=site,
-            observedAt=observation.observed_at or datetime.now(timezone.utc).isoformat(),
-            isLive=True,
+            observedAt=observation.observed_at,
+            isLive=is_live,
             dataStatus='live',
+            statusMessage=status_message,
             conditions=Conditions(
                 temperatureC=observation.temperature_c,
                 humidityPercent=observation.humidity_percent,
                 heatIndexC=observation.heat_index_c,
                 feelsLikeC=observation.apparent_temperature_c,
-                weatherLabel='FortyGuard verified observation',
+                weatherLabel=weather_label,
             ),
             risk=Risk(level=level, summary=summary, detail=detail),
             workers=evaluated_workers,
