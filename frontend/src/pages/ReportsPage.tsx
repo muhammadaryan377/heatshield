@@ -1,13 +1,15 @@
-import { AlertTriangle, BarChart3, ClipboardList, CloudSun, Download, Droplets, FileCheck2, Gauge, ShieldCheck, Sun, UsersRound } from 'lucide-react'
+import { AlertTriangle, BarChart3, ClipboardList, CloudSun, Download, Droplets, FileCheck2, Gauge, History, ShieldCheck, Sun, UsersRound } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { AppShell } from '../components/layout/AppShell'
 import { Topbar } from '../components/layout/Topbar'
+import { HistoricalHeatBehaviorPanel } from '../components/reports/HistoricalHeatBehaviorPanel'
 import { StatePanel } from '../components/ui/StatePanel'
 import { api } from '../lib/api'
 import type { RiskLevel, Site, SiteIntelligence, Worker } from '../types/site'
 
 const STORAGE_KEY = 'heatshield:selected-site'
+type ReportView = 'snapshot' | 'history'
 
 function riskLabel(level?: RiskLevel | null) {
   if (!level) return 'Pending'
@@ -39,6 +41,7 @@ function csvCell(value: string | number | boolean | null | undefined) {
 export function ReportsPage() {
   const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
+  const [view, setView] = useState<ReportView>(searchParams.get('view') === 'history' ? 'history' : 'snapshot')
   const [sites, setSites] = useState<Site[]>([])
   const [siteId, setSiteId] = useState<string | null>(null)
   const [data, setData] = useState<SiteIntelligence | null>(null)
@@ -67,7 +70,17 @@ export function ReportsPage() {
   useEffect(() => {
     if (!siteId) { setData(null); return }
     localStorage.setItem(STORAGE_KEY, siteId)
-    setSearchParams({ site: siteId }, { replace: true })
+    const nextParams: Record<string, string> = { site: siteId }
+    if (view === 'history') nextParams.view = 'history'
+    setSearchParams(nextParams, { replace: true })
+
+    if (view === 'history') {
+      setLoading(false)
+      setData(null)
+      setError(null)
+      return
+    }
+
     const controller = new AbortController()
     setLoading(true)
     setError(null)
@@ -76,8 +89,9 @@ export function ReportsPage() {
       .catch((err: unknown) => { if (!controller.signal.aborted) setError(err instanceof Error ? err.message : 'Could not build report snapshot.') })
       .finally(() => { if (!controller.signal.aborted) setLoading(false) })
     return () => controller.abort()
-  }, [siteId, setSearchParams])
+  }, [siteId, view, setSearchParams])
 
+  const selectedSite = sites.find((site) => site.id === siteId) ?? null
   const workers = data?.workers ?? []
   const activeWorkers = useMemo(() => workers.filter((worker) => worker.status !== 'offsite'), [workers])
   const directSun = activeWorkers.filter((worker) => worker.sunExposure === 'direct').length
@@ -136,16 +150,25 @@ export function ReportsPage() {
       <Topbar
         sites={sites}
         selectedSiteId={siteId}
-        observedAt={data?.observedAt}
+        observedAt={view === 'snapshot' ? data?.observedAt : null}
         onSiteChange={setSiteId}
         pageTitle="Reports"
-        pageSubtitle="Current operational safety snapshot built from verified conditions and saved worker exposure context."
+        pageSubtitle={view === 'history' ? 'Understand how each site repeatedly behaves under heat using FortyGuard historical spatial analysis.' : 'Current operational safety snapshot built from verified conditions and saved worker exposure context.'}
         showAddSite={false}
       />
 
       <div className="reports-page">
+        {!loadingSites && sites.length > 0 && (
+          <div className="report-view-tabs panel" role="tablist" aria-label="Report type">
+            <button type="button" role="tab" aria-selected={view === 'snapshot'} className={view === 'snapshot' ? 'active' : ''} onClick={() => setView('snapshot')}><FileCheck2 size={17} /><span><strong>Current Snapshot</strong><small>What needs attention now</small></span></button>
+            <button type="button" role="tab" aria-selected={view === 'history'} className={view === 'history' ? 'active' : ''} onClick={() => setView('history')}><History size={17} /><span><strong>Historical Heat Behavior</strong><small>How this site normally behaves</small></span></button>
+          </div>
+        )}
+
         {loadingSites ? <StatePanel kind="loading" title="Loading reports" detail="Reading available work sites…" /> : !sites.length ? (
-          <section className="reports-empty panel"><FileCheck2 size={30} /><div><h2>No reportable site yet</h2><p>Create a site and add workers before building an operational report.</p></div><button className="button button--primary" onClick={() => navigate('/')}>Create Site</button></section>
+          <section className="reports-empty panel"><FileCheck2 size={30} /><div><h2>No reportable site yet</h2><p>Create a site and add workers before building operational or historical reports.</p></div><button className="button button--primary" onClick={() => navigate('/')}>Create Site</button></section>
+        ) : view === 'history' && selectedSite ? (
+          <HistoricalHeatBehaviorPanel site={selectedSite} />
         ) : loading && !data ? <StatePanel kind="loading" title="Building current snapshot" detail="Loading verified conditions and worker exposure context for the selected site…" /> : data ? <>
           <section className="report-hero panel">
             <div><span className="sites-eyebrow">CURRENT SNAPSHOT • NOT HISTORICAL TREND</span><h2>{data.site.name} Operational Report</h2><p>{data.site.address}</p></div>

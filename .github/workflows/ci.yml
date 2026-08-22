@@ -77,6 +77,22 @@ jobs:
           assert profile_payload['dataStatus'] == 'configuration_required'
           assert profile_payload['providerRequestCount'] == 0
 
+          historical = client.post(
+              f"/api/sites/{site['id']}/historical-heat-behavior",
+              json={
+                  'startDate': '2024-07-01',
+                  'endDate': '2024-07-30',
+                  'thresholdF': 95,
+                  'granularityMeters': 100,
+              },
+          )
+          assert historical.status_code == 200, historical.text
+          history_payload = historical.json()
+          assert history_payload['dataStatus'] == 'configuration_required'
+          assert history_payload['providerRequestCount'] == 0
+          assert history_payload['dayCount'] == 30
+          assert round(history_payload['thresholdC'], 1) == 35.0
+
           worker_payload = {
               'name': 'Test Worker',
               'role': 'Roofer',
@@ -131,5 +147,5 @@ jobs:
           )
           assert verification.status_code == 200, verification.text
           assert verification.json()['status'] == 'verification_unavailable'
-          print('HeatShield setup and operational planner smoke test passed')
+          print('HeatShield setup, historical behavior and operational planner smoke test passed')
           PY

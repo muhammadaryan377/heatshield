@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 
 from app.core.config import Settings, get_settings
+from app.historical_models import HistoricalHeatBehaviorRequest, HistoricalHeatBehaviorResponse
 from app.schemas import (
     ActionAccepted,
     FortyGuardDailyProfile,
@@ -20,6 +21,7 @@ from app.schemas import (
     WorkerCreate,
 )
 from app.services.fortyguard_profile import FortyGuardProfileService
+from app.services.historical_heat_behavior import HistoricalHeatBehaviorService
 from app.services.operational_heat_planner import OperationalHeatPlannerService
 from app.services.operational_plan import OperationalPlanService
 from app.services.site_intelligence import SiteIntelligenceService
@@ -47,6 +49,10 @@ def thermal_map_service(settings: Settings = Depends(get_settings)) -> ThermalMa
 
 def fortyguard_profile_service(settings: Settings = Depends(get_settings)) -> FortyGuardProfileService:
     return FortyGuardProfileService(settings)
+
+
+def historical_heat_behavior_service(settings: Settings = Depends(get_settings)) -> HistoricalHeatBehaviorService:
+    return HistoricalHeatBehaviorService(settings)
 
 
 def store(settings: Settings = Depends(get_settings)) -> HeatShieldStore:
@@ -158,6 +164,21 @@ async def generate_fortyguard_profile(
     svc: FortyGuardProfileService = Depends(fortyguard_profile_service),
 ) -> FortyGuardDailyProfile:
     """Generate a daily sponsor-data profile without conflating it with live weather."""
+    try:
+        return await svc.generate(site_id, payload)
+    except FileNotFoundError:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='Site not found')
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc))
+
+
+@router.post('/sites/{site_id}/historical-heat-behavior', response_model=HistoricalHeatBehaviorResponse)
+async def historical_heat_behavior(
+    site_id: str,
+    payload: HistoricalHeatBehaviorRequest,
+    svc: HistoricalHeatBehaviorService = Depends(historical_heat_behavior_service),
+) -> HistoricalHeatBehaviorResponse:
+    """Analyze FortyGuard exceedance, persistence and peak-time behavior over a historical date range."""
     try:
         return await svc.generate(site_id, payload)
     except FileNotFoundError:

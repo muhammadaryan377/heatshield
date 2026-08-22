@@ -15,6 +15,7 @@ import type {
   Worker,
   WorkerCreate,
 } from '../types/site'
+import type { HistoricalHeatBehaviorRequest, HistoricalHeatBehaviorResponse } from '../types/history'
 
 const BASE_URL = import.meta.env.VITE_API_BASE_URL ?? ''
 
@@ -89,6 +90,13 @@ export const api = {
   },
   generateFortyGuardProfile(siteId: string, payload: FortyGuardProfileRequest, signal?: AbortSignal) {
     return request<FortyGuardDailyProfile>(`/api/sites/${siteId}/fortyguard-profile`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+      signal,
+    })
+  },
+  generateHistoricalHeatBehavior(siteId: string, payload: HistoricalHeatBehaviorRequest, signal?: AbortSignal) {
+    return request<HistoricalHeatBehaviorResponse>(`/api/sites/${siteId}/historical-heat-behavior`, {
       method: 'POST',
       body: JSON.stringify(payload),
       signal,
