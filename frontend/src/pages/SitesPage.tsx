@@ -1,4 +1,4 @@
-import { Activity, Building2, ChevronRight, ClipboardList, CloudSun, MapPin, Plus, ShieldCheck, UserPlus, UsersRound } from 'lucide-react'
+import { Activity, Building2, ChevronRight, ClipboardList, History, MapPin, Plus, ShieldCheck, UserPlus, UsersRound } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { AppShell } from '../components/layout/AppShell'
@@ -148,8 +148,9 @@ export function SitesPage() {
                       </div>
                       <div className="sites-actions">
                         <button className="button button--secondary" onClick={() => navigate(`/workers/new?site=${encodeURIComponent(selectedSite.id)}`)}><UserPlus size={16} /> Add Worker</button>
-                        <button className="button button--primary" onClick={() => navigate(`/plan?site=${encodeURIComponent(selectedSite.id)}`)}><ClipboardList size={16} /> Operational Planner</button>
-                        <button className="button button--outline-teal" onClick={() => navigate(`/?site=${encodeURIComponent(selectedSite.id)}`)}><ShieldCheck size={16} /> Open Intelligence</button>
+                        <button className="button button--primary" onClick={() => navigate(`/plan?site=${encodeURIComponent(selectedSite.id)}`)}><ClipboardList size={16} /> Plan Today</button>
+                        <button className="button button--outline-teal" onClick={() => navigate(`/?site=${encodeURIComponent(selectedSite.id)}`)}><ShieldCheck size={16} /> Live Intelligence</button>
+                        <button className="button button--history" onClick={() => navigate(`/heat-history?site=${encodeURIComponent(selectedSite.id)}`)}><History size={16} /> Heat History</button>
                       </div>
                     </section>
                     <OperationalZoneManager site={selectedSite} workers={selectedWorkers} onSiteUpdated={siteUpdated} />
