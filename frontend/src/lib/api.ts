@@ -1,10 +1,15 @@
 import type {
   FortyGuardDailyProfile,
   FortyGuardProfileRequest,
+  OperationalApproval,
+  OperationalApprovalRequest,
+  OperationalHeatPlan,
+  OperationalPlannerRequest,
   OperationalPlan,
   Site,
   SiteCreate,
   SiteIntelligence,
+  SiteZoneCreate,
   ThermalMapRequest,
   ThermalMapResponse,
   Worker,
@@ -66,6 +71,12 @@ export const api = {
   createSite(payload: SiteCreate) {
     return request<Site>('/api/sites', { method: 'POST', body: JSON.stringify(payload) })
   },
+  addSiteZone(siteId: string, payload: SiteZoneCreate) {
+    return request<Site>(`/api/sites/${siteId}/zones`, { method: 'POST', body: JSON.stringify(payload) })
+  },
+  deleteSiteZone(siteId: string, zoneId: string) {
+    return request<Site>(`/api/sites/${siteId}/zones/${zoneId}`, { method: 'DELETE' })
+  },
   getSiteIntelligence(siteId: string, signal?: AbortSignal) {
     return request<SiteIntelligence>(`/api/sites/${siteId}/intelligence`, { signal })
   },
@@ -81,6 +92,24 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(payload),
       signal,
+    })
+  },
+  generateOperationalPlanner(siteId: string, payload: OperationalPlannerRequest, signal?: AbortSignal) {
+    return request<OperationalHeatPlan>(`/api/sites/${siteId}/operational-planner`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+      signal,
+    })
+  },
+  approveOperationalDecision(siteId: string, payload: OperationalApprovalRequest) {
+    return request<OperationalApproval>(`/api/sites/${siteId}/operational-planner/approvals`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    })
+  },
+  verifyOperationalDecision(siteId: string, approvalId: string) {
+    return request<OperationalApproval>(`/api/sites/${siteId}/operational-planner/approvals/${approvalId}/verify`, {
+      method: 'POST',
     })
   },
   generatePlan(siteId: string, signal?: AbortSignal) {
