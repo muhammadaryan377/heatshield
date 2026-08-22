@@ -27,15 +27,20 @@ export function SiteStatusPanel({ data, onRefresh }: SiteStatusPanelProps) {
   const activeWorkers = data.workers.filter((worker) => worker.status !== 'offsite').length
   const conditions = data.conditions
   const riskLabel = data.risk ? data.risk.level.charAt(0).toUpperCase() + data.risk.level.slice(1) : '—'
-  const providerFooter = conditions ? (data.isLive ? 'Live FortyGuard' : 'Verified FortyGuard') : 'Awaiting provider'
-  const statusLabel = data.isLive ? 'Live' : conditions ? 'Recent verified' : 'Waiting for live data'
+  const source = data.conditionSourceLabel ?? (data.conditionSource === 'nws' ? 'National Weather Service' : data.conditionSource === 'fortyguard' ? 'FortyGuard' : 'Provider')
+  const providerFooter = conditions ? `${data.isLive ? 'Live' : 'Verified'} • ${source}` : 'Awaiting provider'
+  const statusLabel = conditions
+    ? data.conditionSource === 'nws'
+      ? 'Live • NWS fallback'
+      : data.isLive ? 'Live • FortyGuard' : 'Recent • FortyGuard'
+    : 'Waiting for live data'
 
   return (
     <section className="site-status panel">
       <div className="site-status__header">
         <div className="site-status__title-row">
           <h2>Site Status</h2>
-          <span className={`live-indicator ${data.isLive ? '' : 'live-indicator--offline'}`}><span />{statusLabel}</span>
+          <span className={`live-indicator ${conditions ? '' : 'live-indicator--offline'}`}><span />{statusLabel}</span>
         </div>
         <button type="button" className="site-status__updated site-status__refresh" onClick={onRefresh}>Last updated: {clockLabel(data.observedAt)} ↻</button>
       </div>
@@ -45,17 +50,27 @@ export function SiteStatusPanel({ data, onRefresh }: SiteStatusPanelProps) {
         <div className="live-data-empty">
           <CloudOff size={21} />
           <div>
-            <strong>No live environmental observation is being shown</strong>
-            <p>{data.statusMessage ?? 'Connect FortyGuard to retrieve verified conditions for this site.'}</p>
+            <strong>No verified environmental observation is being shown</strong>
+            <p>{data.statusMessage ?? 'HeatShield could not retrieve a verified condition source for this site.'}</p>
           </div>
           <button type="button" className="button button--quiet" onClick={onRefresh}>Retry live data</button>
         </div>
       )}
 
-      {conditions && data.statusMessage && (
+      {conditions && data.fallbackActive && (
         <div className="live-data-empty">
           <AlertTriangle size={19} />
-          <div><strong>Using the latest verified observation</strong><p>{data.statusMessage}</p></div>
+          <div>
+            <strong>Atmospheric conditions verified by NWS</strong>
+            <p>{data.thermalMessage ?? 'FortyGuard spatial thermal intelligence is temporarily unavailable.'} HeatShield is not inventing thermal hotspots while that layer is unavailable.</p>
+          </div>
+        </div>
+      )}
+
+      {conditions && !data.fallbackActive && data.statusMessage && (
+        <div className="live-data-empty">
+          <AlertTriangle size={19} />
+          <div><strong>Using the latest verified FortyGuard observation</strong><p>{data.statusMessage}</p></div>
         </div>
       )}
 
@@ -66,7 +81,7 @@ export function SiteStatusPanel({ data, onRefresh }: SiteStatusPanelProps) {
         <article className="metric-card">
           <div className="metric-card__label metric-card__label--danger"><ShieldAlert size={16} /><span>Risk Level</span></div>
           <div className="metric-card__value metric-card__value--danger">{riskLabel}</div>
-          <div className="metric-card__footer"><span>{data.risk ? 'Calculated from verified conditions' : 'Awaiting live conditions'}</span></div>
+          <div className="metric-card__footer"><span>{data.risk ? `Calculated from ${source} conditions` : 'Awaiting verified conditions'}</span></div>
         </article>
         <article className="metric-card">
           <div className="metric-card__label metric-card__label--cool"><UsersRound size={16} /><span>Workers Active</span></div>
