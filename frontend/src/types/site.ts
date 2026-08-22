@@ -102,6 +102,12 @@ export interface SiteIntelligence {
   isLive: boolean
   dataStatus: 'live' | 'configuration_required' | 'provider_unavailable'
   statusMessage?: string | null
+  conditionSource?: 'fortyguard' | 'nws' | null
+  conditionSourceLabel?: string | null
+  thermalStatus: 'verified' | 'recent_verified' | 'unavailable' | 'not_configured'
+  thermalObservedAt?: string | null
+  thermalMessage?: string | null
+  fallbackActive: boolean
   conditions?: {
     temperatureC: number
     humidityPercent: number
@@ -134,4 +140,59 @@ export interface SiteIntelligence {
     actionLabel: string
     dueInMinutes: number
   } | null
+}
+
+export interface PlanWorkerAction {
+  workerId: string
+  workerName: string
+  role: string
+  area: string
+  riskLevel: RiskLevel
+  currentIssue: string
+  recommendedAction: string
+  timeWindow: string
+  rationale: string
+}
+
+export interface PlanTimelineItem {
+  time: string
+  title: string
+  detail: string
+  category: 'hydration' | 'work_planning' | 'rotation' | 'recovery' | 'assessment' | 'closeout'
+}
+
+export interface PlanSiteAction {
+  id: string
+  title: string
+  detail: string
+  priority: 'now' | 'today' | 'monitor'
+}
+
+export interface OperationalPlan {
+  site: Site
+  generatedAt: string
+  planStatus: 'ready' | 'limited_data' | 'no_workers'
+  agentMode: 'deterministic' | 'deepseek_assisted'
+  overallRisk: RiskLevel
+  riskHeadline: string
+  riskSummary: string
+  inputs: {
+    conditionSource?: 'fortyguard' | 'nws' | null
+    thermalStatus: string
+    observedAt?: string | null
+    temperatureC?: number | null
+    humidityPercent?: number | null
+    heatIndexC?: number | null
+    windKph?: number | null
+    workerCount: number
+    highExposureWorkers: number
+    directSunWorkers: number
+    heavyWorkWorkers: number
+    limitedShadeWorkers: number
+  }
+  workers: PlanWorkerAction[]
+  timeline: PlanTimelineItem[]
+  siteActions: PlanSiteAction[]
+  reasoning: string
+  reasoningFactors: string[]
 }
