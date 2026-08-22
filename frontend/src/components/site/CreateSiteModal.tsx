@@ -1,5 +1,15 @@
-import { Check, MapPin, RotateCcw, Search, Undo2, X } from 'lucide-react'
-import { FormEvent, useEffect, useMemo, useRef, useState } from 'react'
+import {
+  Check,
+  CheckCircle2,
+  LoaderCircle,
+  MapPin,
+  MousePointer2,
+  RotateCcw,
+  Search,
+  Undo2,
+  X,
+} from 'lucide-react'
+import { FormEvent, KeyboardEvent, useEffect, useMemo, useRef, useState } from 'react'
 import { api } from '../../lib/api'
 import { loadGoogleMaps } from '../../lib/googleMaps'
 import type { Coordinate, Site } from '../../types/site'
@@ -25,16 +35,22 @@ export function CreateSiteModal({ open, onClose, onCreated }: CreateSiteModalPro
   const mapElement = useRef<HTMLDivElement>(null)
   const mapRef = useRef<google.maps.Map | null>(null)
   const polygonRef = useRef<google.maps.Polygon | null>(null)
+  const locationMarkerRef = useRef<google.maps.Marker | null>(null)
   const clickListenerRef = useRef<google.maps.MapsEventListener | null>(null)
+
   const [name, setName] = useState('')
   const [address, setAddress] = useState('')
   const [points, setPoints] = useState<Coordinate[]>([])
   const [mapMessage, setMapMessage] = useState<string | null>(null)
+  const [searching, setSearching] = useState(false)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  const canSave = name.trim().length >= 2 && address.trim().length >= 2 && points.length >= 3 && !saving
   const center = useMemo(() => averageCenter(points), [points])
+  const hasName = name.trim().length >= 2
+  const hasBoundary = points.length >= 3
+  const canSave = hasName && hasBoundary && !saving
+  const resolvedAddress = address.trim() || `${center.lat.toFixed(5)}, ${center.lng.toFixed(5)}`
 
   useEffect(() => {
     if (!open || !mapElement.current || !apiKey) return
@@ -43,6 +59,7 @@ export function CreateSiteModal({ open, onClose, onCreated }: CreateSiteModalPro
     loadGoogleMaps(apiKey)
       .then((googleInstance) => {
         if (cancelled || !mapElement.current) return
+
         const map = new googleInstance.maps.Map(mapElement.current, {
           center: DEFAULT_CENTER,
           zoom: 15,
@@ -51,12 +68,15 @@ export function CreateSiteModal({ open, onClose, onCreated }: CreateSiteModalPro
           streetViewControl: false,
           fullscreenControl: false,
           mapTypeControl: true,
+          gestureHandling: 'greedy',
         })
         mapRef.current = map
+
         clickListenerRef.current = map.addListener('click', (event: google.maps.MapMouseEvent) => {
           if (!event.latLng) return
           const next = { lat: event.latLng.lat(), lng: event.latLng.lng() }
           setPoints((current) => [...current, next])
+          setMapMessage(null)
         })
       })
       .catch((err: Error) => setMapMessage(err.message))
@@ -67,6 +87,8 @@ export function CreateSiteModal({ open, onClose, onCreated }: CreateSiteModalPro
       clickListenerRef.current = null
       polygonRef.current?.setMap(null)
       polygonRef.current = null
+      locationMarkerRef.current?.setMap(null)
+      locationMarkerRef.current = null
       mapRef.current = null
     }
   }, [open])
@@ -74,7 +96,9 @@ export function CreateSiteModal({ open, onClose, onCreated }: CreateSiteModalPro
   useEffect(() => {
     const map = mapRef.current
     if (!map || !window.google?.maps) return
+
     polygonRef.current?.setMap(null)
+    polygonRef.current = null
     if (!points.length) return
 
     polygonRef.current = new window.google.maps.Polygon({
@@ -95,47 +119,100 @@ export function CreateSiteModal({ open, onClose, onCreated }: CreateSiteModalPro
     setPoints([])
     setError(null)
     setMapMessage(null)
+    setSearching(false)
+    locationMarkerRef.current?.setMap(null)
+    locationMarkerRef.current = null
   }
 
   const close = () => {
+    if (saving) return
     reset()
     onClose()
   }
 
   const findAddress = () => {
-    if (!address.trim() || !mapRef.current || !window.google?.maps) return
+    if (!address.trim() || !mapRef.current || !window.google?.maps || searching) return
+
     const geocoder = new window.google.maps.Geocoder()
+    setSearching(true)
+    setError(null)
     setMapMessage('Finding location…')
-    geocoder.geocode({ address }, (results, status) => {
+
+    geocoder.geocode({ address: address.trim() }, (results, status) => {
+      setSearching(false)
       if (status !== 'OK' || !results?.[0]) {
-        setMapMessage('Address could not be located. Pan the map manually and draw the site area.')
+        setMapMessage('Location not found. Try a more specific address, or pan the map manually.')
         return
       }
+
       const result = results[0]
-      mapRef.current?.panTo(result.geometry.location)
+      const location = result.geometry.location
+      mapRef.current?.panTo(location)
       mapRef.current?.setZoom(18)
       setAddress(result.formatted_address)
-      setMapMessage('Location found. Click around the site boundary to draw the full area.')
+
+      locationMarkerRef.current?.setMap(null)
+      locationMarkerRef.current = new window.google.maps.Marker({
+        position: location,
+        map: mapRef.current,
+        title: result.formatted_address,
+      })
+
+      setMapMessage('Location found. Click around the actual work-area corners to define the site.')
     })
+  }
+
+  const addressKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
+    if (event.key !== 'Enter') return
+    event.preventDefault()
+    findAddress()
+  }
+
+  const undoPoint = () => {
+    setPoints((current) => current.slice(0, -1))
+    setError(null)
+  }
+
+  const clearBoundary = () => {
+    setPoints([])
+    setError(null)
   }
 
   const submit = async (event: FormEvent) => {
     event.preventDefault()
-    if (!canSave) return
+    if (!canSave) {
+      if (!hasName) setError('Give this site a name before saving.')
+      else if (!hasBoundary) setError('Select at least 3 map points to define the work-site boundary.')
+      return
+    }
+
     setSaving(true)
     setError(null)
     try {
-      const site = await api.createSite({ name: name.trim(), address: address.trim(), center, polygon: points, zones: [] })
+      const site = await api.createSite({
+        name: name.trim(),
+        address: resolvedAddress,
+        center,
+        polygon: points,
+        zones: [],
+      })
       onCreated(site)
-      close()
+      reset()
+      onClose()
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not create site.')
+      setError(err instanceof Error ? err.message : 'Could not save this site. Please try again.')
     } finally {
       setSaving(false)
     }
   }
 
   if (!open) return null
+
+  const missingLabel = !hasName
+    ? 'Add a site name to continue'
+    : !hasBoundary
+      ? `Select ${Math.max(0, 3 - points.length)} more boundary point${3 - points.length === 1 ? '' : 's'}`
+      : 'Ready to save'
 
   return (
     <div className="modal-backdrop" role="presentation">
@@ -144,53 +221,110 @@ export function CreateSiteModal({ open, onClose, onCreated }: CreateSiteModalPro
           <div>
             <span className="eyebrow">SITE SETUP</span>
             <h2 id="create-site-title">Create a work site</h2>
-            <p>Search the location, then click around the complete work area to draw its boundary.</p>
+            <p>Find the location, draw the complete work area, then save it to HeatShield.</p>
           </div>
-          <button type="button" className="icon-button" onClick={close} aria-label="Close site builder"><X size={20} /></button>
+          <button type="button" className="icon-button" onClick={close} aria-label="Close site builder" disabled={saving}><X size={20} /></button>
         </div>
 
         <form className="site-builder-modal__body" onSubmit={submit}>
           <aside className="site-builder-form">
-            <label>
-              <span>Site name</span>
-              <input value={name} onChange={(event) => setName(event.target.value)} placeholder="e.g. Downtown Tower Project" autoFocus />
-            </label>
-            <label>
-              <span>Address / location</span>
-              <div className="field-with-action">
-                <input value={address} onChange={(event) => setAddress(event.target.value)} placeholder="Search an address" />
-                <button type="button" onClick={findAddress} aria-label="Find address"><Search size={18} /></button>
+            <div className="site-builder-form__scroll">
+              <div className="site-builder-progress" aria-label="Site creation steps">
+                <span className={hasName ? 'is-complete' : 'is-active'}><i>1</i> Name</span>
+                <span className={address.trim() ? 'is-complete' : ''}><i>2</i> Locate</span>
+                <span className={hasBoundary ? 'is-complete' : points.length ? 'is-active' : ''}><i>3</i> Boundary</span>
+                <span className={canSave ? 'is-active' : ''}><i>4</i> Save</span>
               </div>
-            </label>
 
-            <div className="boundary-status">
-              <div className="boundary-status__icon"><MapPin size={20} /></div>
-              <div>
-                <strong>{points.length < 3 ? 'Draw the site boundary' : 'Boundary ready'}</strong>
-                <span>{points.length} map point{points.length === 1 ? '' : 's'} selected {points.length < 3 ? '— minimum 3' : '— ready to save'}</span>
+              <div className="site-builder-section">
+                <div className="site-builder-section__heading">
+                  <span>1</span>
+                  <div><strong>Name the site</strong><small>This is how your team will identify it.</small></div>
+                </div>
+                <label>
+                  <span>Site name</span>
+                  <input
+                    value={name}
+                    onChange={(event) => { setName(event.target.value); setError(null) }}
+                    placeholder="e.g. Downtown Tower Project"
+                    autoFocus
+                  />
+                </label>
               </div>
+
+              <div className="site-builder-section">
+                <div className="site-builder-section__heading">
+                  <span>2</span>
+                  <div><strong>Find the location</strong><small>Optional — use search to jump to the work area.</small></div>
+                </div>
+                <label>
+                  <span>Address / location</span>
+                  <div className="field-with-action">
+                    <input
+                      value={address}
+                      onChange={(event) => setAddress(event.target.value)}
+                      onKeyDown={addressKeyDown}
+                      placeholder="Search city, address or place"
+                    />
+                    <button type="button" onClick={findAddress} aria-label="Find address" disabled={!address.trim() || searching}>
+                      {searching ? <LoaderCircle className="spin" size={18} /> : <Search size={18} />}
+                    </button>
+                  </div>
+                </label>
+              </div>
+
+              <div className="site-builder-section">
+                <div className="site-builder-section__heading">
+                  <span>3</span>
+                  <div><strong>Draw the work area</strong><small>Click each outer corner. HeatShield closes the polygon automatically.</small></div>
+                </div>
+
+                <div className={`boundary-status${hasBoundary ? ' boundary-status--ready' : ''}`}>
+                  <div className="boundary-status__icon">{hasBoundary ? <CheckCircle2 size={21} /> : <MousePointer2 size={20} />}</div>
+                  <div>
+                    <strong>{hasBoundary ? 'Boundary ready' : 'Select boundary corners'}</strong>
+                    <span>{points.length} point{points.length === 1 ? '' : 's'} selected · {hasBoundary ? 'site area is ready to save' : 'minimum 3 required'}</span>
+                  </div>
+                </div>
+
+                <div className="site-builder-tools">
+                  <button type="button" onClick={undoPoint} disabled={!points.length}><Undo2 size={16} /> Undo last point</button>
+                  <button type="button" onClick={clearBoundary} disabled={!points.length}><RotateCcw size={16} /> Start boundary again</button>
+                </div>
+              </div>
+
+              {hasBoundary && (
+                <div className="site-ready-summary">
+                  <CheckCircle2 size={20} />
+                  <div>
+                    <strong>Site is ready</strong>
+                    <span>{points.length} boundary points · center {center.lat.toFixed(5)}, {center.lng.toFixed(5)}</span>
+                  </div>
+                </div>
+              )}
+
+              <details className="site-builder-help">
+                <summary>How site selection works</summary>
+                <ol>
+                  <li>Search for the work location, or move the map manually.</li>
+                  <li>Click the outside corners of the real work area.</li>
+                  <li>Use Undo if a point is misplaced.</li>
+                  <li>When the boundary is ready, press Save Site below.</li>
+                </ol>
+              </details>
+
+              {error && <div className="form-error">{error}</div>}
             </div>
 
-            <div className="site-builder-tools">
-              <button type="button" onClick={() => setPoints((current) => current.slice(0, -1))} disabled={!points.length}><Undo2 size={16} /> Undo point</button>
-              <button type="button" onClick={() => setPoints([])} disabled={!points.length}><RotateCcw size={16} /> Clear boundary</button>
-            </div>
-
-            <div className="site-builder-help">
-              <strong>How to select the site</strong>
-              <ol>
-                <li>Find the work location.</li>
-                <li>Click each corner of the actual work area.</li>
-                <li>Use at least three points to cover the whole site.</li>
-                <li>Save. HeatShield will analyze the selected area.</li>
-              </ol>
-            </div>
-
-            {error && <div className="form-error">{error}</div>}
-            <div className="site-builder-actions">
-              <button type="button" className="button" onClick={close}>Cancel</button>
-              <button type="submit" className="button button--primary" disabled={!canSave}>
-                <Check size={17} /> {saving ? 'Creating…' : 'Create Site'}
+            <div className="site-builder-actions site-builder-actions--sticky">
+              <div className="site-builder-actions__status">
+                {canSave ? <CheckCircle2 size={16} /> : <MapPin size={16} />}
+                <span>{missingLabel}</span>
+              </div>
+              <button type="button" className="button" onClick={close} disabled={saving}>Cancel</button>
+              <button type="submit" className="button button--primary site-builder-save" disabled={!canSave}>
+                {saving ? <LoaderCircle className="spin" size={17} /> : <Check size={17} />}
+                {saving ? 'Saving Site…' : 'Save Site'}
               </button>
             </div>
           </aside>
@@ -203,7 +337,10 @@ export function CreateSiteModal({ open, onClose, onCreated }: CreateSiteModalPro
                 <p>Add `VITE_GOOGLE_MAPS_API_KEY` to the frontend environment to draw real site areas.</p>
               </div>
             )}
-            <div className="site-builder-map-tip">Click map corners to draw the work-site polygon</div>
+            <div className="site-builder-map-tip">
+              <MousePointer2 size={15} />
+              {hasBoundary ? `${points.length} points selected · boundary ready` : 'Click map corners to draw the work-site boundary'}
+            </div>
             {mapMessage && <div className="site-builder-map-message">{mapMessage}</div>}
           </div>
         </form>
