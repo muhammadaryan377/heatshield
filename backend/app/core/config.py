@@ -4,8 +4,16 @@ from pathlib import Path
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
+BACKEND_ROOT = Path(__file__).resolve().parents[2]
+ENV_FILE = BACKEND_ROOT / '.env'
+
+
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file='.env', env_file_encoding='utf-8', extra='ignore')
+    model_config = SettingsConfigDict(
+        env_file=ENV_FILE,
+        env_file_encoding='utf-8',
+        extra='ignore',
+    )
 
     app_env: str = 'development'
     # Fixtures must be explicitly enabled. The product never shows fabricated
@@ -33,7 +41,11 @@ class Settings(BaseSettings):
         path = Path(self.database_path)
         if path.is_absolute():
             return path
-        return Path(__file__).resolve().parents[2] / path
+        return BACKEND_ROOT / path
+
+    @property
+    def fortyguard_configured(self) -> bool:
+        return bool(self.fortyguard_api_key and self.fortyguard_api_key.strip())
 
 
 @lru_cache
