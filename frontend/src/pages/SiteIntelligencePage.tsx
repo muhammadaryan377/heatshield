@@ -1,7 +1,9 @@
-import { Info } from 'lucide-react'
+import { Building2, Info, MapPinned, Plus, UserPlus } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { AppShell } from '../components/layout/AppShell'
 import { Topbar } from '../components/layout/Topbar'
+import { CreateSiteModal } from '../components/site/CreateSiteModal'
 import { ExposureHotspots } from '../components/site/ExposureHotspots'
 import { LiveConditions } from '../components/site/LiveConditions'
 import { NextAction } from '../components/site/NextAction'
@@ -10,84 +12,132 @@ import { SiteStatusPanel } from '../components/site/SiteStatusPanel'
 import { WorkerOverview } from '../components/site/WorkerOverview'
 import { StatePanel } from '../components/ui/StatePanel'
 import { api } from '../lib/api'
-import type { SiteIntelligence } from '../types/site'
+import type { Site, SiteIntelligence } from '../types/site'
 
-const DEFAULT_SITE_ID = 'site-a'
+const STORAGE_KEY = 'heatshield:selected-site'
 
 export function SiteIntelligencePage() {
+  const [searchParams, setSearchParams] = useSearchParams()
+  const [sites, setSites] = useState<Site[]>([])
+  const [selectedSiteId, setSelectedSiteId] = useState<string | null>(null)
   const [data, setData] = useState<SiteIntelligence | null>(null)
+  const [sitesLoading, setSitesLoading] = useState(true)
+  const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [loading, setLoading] = useState(true)
   const [requestKey, setRequestKey] = useState(0)
+  const [createSiteOpen, setCreateSiteOpen] = useState(false)
 
   const reload = useCallback(() => setRequestKey((value) => value + 1), [])
 
   useEffect(() => {
     const controller = new AbortController()
+    setSitesLoading(true)
+    api.listSites(controller.signal)
+      .then((loadedSites) => {
+        setSites(loadedSites)
+        const requested = searchParams.get('site')
+        const stored = localStorage.getItem(STORAGE_KEY)
+        const preferred = [requested, stored].find((id) => id && loadedSites.some((site) => site.id === id))
+        setSelectedSiteId(preferred ?? loadedSites[0]?.id ?? null)
+      })
+      .catch((err: unknown) => setError(err instanceof Error ? err.message : 'Unable to load sites.'))
+      .finally(() => setSitesLoading(false))
+    return () => controller.abort()
+  }, [])
+
+  useEffect(() => {
+    if (!selectedSiteId) {
+      setData(null)
+      return
+    }
+    localStorage.setItem(STORAGE_KEY, selectedSiteId)
+    setSearchParams({ site: selectedSiteId }, { replace: true })
+    const controller = new AbortController()
     setLoading(true)
     setError(null)
-
-    api.getSiteIntelligence(DEFAULT_SITE_ID, controller.signal)
+    api.getSiteIntelligence(selectedSiteId, controller.signal)
       .then(setData)
       .catch((err: unknown) => {
         if (err instanceof DOMException && err.name === 'AbortError') return
         setError(err instanceof Error ? err.message : 'Unable to load site intelligence.')
       })
-      .finally(() => {
-        if (!controller.signal.aborted) setLoading(false)
-      })
-
+      .finally(() => { if (!controller.signal.aborted) setLoading(false) })
     return () => controller.abort()
-  }, [requestKey])
+  }, [selectedSiteId, requestKey])
 
-  const observedAt = data?.observedAt ?? new Date().toISOString()
-  const siteName = data?.site.name ?? 'Site A - Construction Yard'
+  const selectSite = (siteId: string) => {
+    setSelectedSiteId(siteId)
+    setData(null)
+  }
+
+  const siteCreated = (site: Site) => {
+    setSites((current) => [site, ...current.filter((item) => item.id !== site.id)])
+    setSelectedSiteId(site.id)
+    setData(null)
+  }
 
   return (
     <AppShell>
-      <Topbar siteName={siteName} observedAt={observedAt} />
+      <Topbar
+        sites={sites}
+        selectedSiteId={selectedSiteId}
+        observedAt={data?.observedAt}
+        onSiteChange={selectSite}
+        onCreateSite={() => setCreateSiteOpen(true)}
+      />
+
       <div className="page-content">
-        {loading && !data && (
-          <StatePanel kind="loading" title="Loading Site Intelligence" detail="Collecting site, worker and environmental context…" />
+        {sitesLoading && <StatePanel kind="loading" title="Loading HeatShield" detail="Checking your work sites…" />}
+
+        {!sitesLoading && error && !sites.length && (
+          <StatePanel kind="error" title="Could not load sites" detail={error} onRetry={() => window.location.reload()} />
         )}
-        {error && !data && (
-          <StatePanel kind="error" title="Site Intelligence unavailable" detail={error} onRetry={reload} />
+
+        {!sitesLoading && !sites.length && !error && (
+          <section className="first-site-state panel">
+            <div className="first-site-state__visual">
+              <div className="first-site-state__grid" />
+              <span className="first-site-state__pin first-site-state__pin--one"><MapPinned size={22} /></span>
+              <span className="first-site-state__pin first-site-state__pin--two"><MapPinned size={18} /></span>
+              <div className="first-site-state__outline" />
+            </div>
+            <div className="first-site-state__content">
+              <span className="eyebrow">START WITH REAL SITE DATA</span>
+              <h2>Create your first work site</h2>
+              <p>HeatShield starts empty. Draw the complete work area on Google Maps, then add the people who actually work there. Environmental intelligence is requested only for the site you create.</p>
+              <button type="button" className="button button--primary first-site-state__cta" onClick={() => setCreateSiteOpen(true)}><Plus size={18} /> Create Site</button>
+              <div className="setup-sequence">
+                <div><span><Building2 size={17} /></span><strong>1. Create site</strong><small>Draw the full polygon on the map</small></div>
+                <div><span><UserPlus size={17} /></span><strong>2. Add workers</strong><small>Assign real workers and positions</small></div>
+                <div><span><Info size={17} /></span><strong>3. Analyze</strong><small>Fetch verified heat conditions</small></div>
+              </div>
+            </div>
+          </section>
         )}
+
+        {selectedSiteId && loading && !data && <StatePanel kind="loading" title="Loading Site Intelligence" detail="Reading the selected site and requesting live environmental data…" />}
+        {selectedSiteId && error && !data && <StatePanel kind="error" title="Site Intelligence unavailable" detail={error} onRetry={reload} />}
+
         {data && (
           <>
-            {error && (
-              <div className="inline-warning">
-                <Info size={16} />
-                <span>Latest refresh failed. Showing the most recent successful observation.</span>
-                <button type="button" onClick={reload}>Retry</button>
-              </div>
-            )}
+            {error && <div className="inline-warning"><Info size={16} /><span>Latest refresh failed. Showing the last successful site response.</span><button type="button" onClick={reload}>Retry</button></div>}
             <div className="dashboard-grid dashboard-grid--top">
-              <SiteMap
-                site={data.site}
-                workers={data.workers}
-                temperatureC={data.conditions.temperatureC}
-                weatherLabel={data.conditions.weatherLabel}
-              />
-              <SiteStatusPanel data={data} />
+              <SiteMap site={data.site} workers={data.workers} temperatureC={data.conditions?.temperatureC} weatherLabel={data.conditions?.weatherLabel} />
+              <SiteStatusPanel data={data} onRefresh={reload} />
             </div>
-
             <div className="dashboard-grid dashboard-grid--bottom">
-              <WorkerOverview workers={data.workers} />
+              <WorkerOverview workers={data.workers} siteId={data.site.id} />
               <div className="supporting-grid">
                 <LiveConditions data={data} />
                 <ExposureHotspots hotspots={data.hotspots} />
                 <NextAction data={data} />
               </div>
             </div>
-
-            <div className="recommendation-footnote panel">
-              <span><Info size={15} /> Recommendations update automatically as conditions change.</span>
-              <button type="button" className="text-link">How it works <span>?</span></button>
-            </div>
           </>
         )}
       </div>
+
+      <CreateSiteModal open={createSiteOpen} onClose={() => setCreateSiteOpen(false)} onCreated={siteCreated} />
     </AppShell>
   )
 }
