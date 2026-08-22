@@ -8,6 +8,7 @@ import './sidebar-collapse.css'
 import './add-worker-v2.css'
 import './plan.css'
 import './sites-reports.css'
+import './thermal-map.css'
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
