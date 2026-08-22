@@ -1,7 +1,8 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 
 from app.core.config import Settings, get_settings
-from app.schemas import ActionAccepted, Site, SiteCreate, SiteIntelligence, Worker, WorkerCreate
+from app.schemas import ActionAccepted, OperationalPlan, Site, SiteCreate, SiteIntelligence, Worker, WorkerCreate
+from app.services.operational_plan import OperationalPlanService
 from app.services.site_intelligence import SiteIntelligenceService
 from app.services.store import HeatShieldStore
 
@@ -10,6 +11,10 @@ router = APIRouter(prefix='/api')
 
 def intelligence_service(settings: Settings = Depends(get_settings)) -> SiteIntelligenceService:
     return SiteIntelligenceService(settings)
+
+
+def plan_service(settings: Settings = Depends(get_settings)) -> OperationalPlanService:
+    return OperationalPlanService(settings)
 
 
 def store(settings: Settings = Depends(get_settings)) -> HeatShieldStore:
@@ -27,6 +32,9 @@ async def config_status(settings: Settings = Depends(get_settings)) -> dict[str,
     return {
         'fortyguardConfigured': settings.fortyguard_configured,
         'fortyguardBaseUrl': settings.fortyguard_base_url,
+        'nwsFallbackEnabled': True,
+        'nwsBaseUrl': settings.nws_base_url,
+        'deepseekConfigured': settings.deepseek_configured,
         'fixturesEnabled': settings.heatshield_use_fixtures,
         'environment': settings.app_env,
     }
@@ -75,6 +83,17 @@ async def site_intelligence(
 ) -> SiteIntelligence:
     try:
         return await svc.get(site_id)
+    except FileNotFoundError:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='Site not found')
+
+
+@router.post('/sites/{site_id}/plan', response_model=OperationalPlan)
+async def generate_plan(
+    site_id: str,
+    svc: OperationalPlanService = Depends(plan_service),
+) -> OperationalPlan:
+    try:
+        return await svc.generate(site_id)
     except FileNotFoundError:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='Site not found')
 
