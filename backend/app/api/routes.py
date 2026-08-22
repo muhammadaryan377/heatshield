@@ -1,15 +1,19 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 
 from app.core.config import Settings, get_settings
-from app.schemas import ActionAccepted, SiteIntelligence
-from app.services.fortyguard import FortyGuardConfigurationError
+from app.schemas import ActionAccepted, Site, SiteCreate, SiteIntelligence, Worker, WorkerCreate
 from app.services.site_intelligence import SiteIntelligenceService
+from app.services.store import HeatShieldStore
 
 router = APIRouter(prefix='/api')
 
 
-def service(settings: Settings = Depends(get_settings)) -> SiteIntelligenceService:
+def intelligence_service(settings: Settings = Depends(get_settings)) -> SiteIntelligenceService:
     return SiteIntelligenceService(settings)
+
+
+def store(settings: Settings = Depends(get_settings)) -> HeatShieldStore:
+    return HeatShieldStore(settings)
 
 
 @router.get('/health')
@@ -17,32 +21,65 @@ async def health() -> dict[str, str]:
     return {'status': 'ok'}
 
 
+@router.get('/sites', response_model=list[Site])
+async def list_sites(db: HeatShieldStore = Depends(store)) -> list[Site]:
+    return db.list_sites()
+
+
+@router.post('/sites', response_model=Site, status_code=status.HTTP_201_CREATED)
+async def create_site(payload: SiteCreate, db: HeatShieldStore = Depends(store)) -> Site:
+    return db.create_site(payload)
+
+
+@router.get('/sites/{site_id}', response_model=Site)
+async def get_site(site_id: str, db: HeatShieldStore = Depends(store)) -> Site:
+    try:
+        return db.get_site(site_id)
+    except FileNotFoundError:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='Site not found')
+
+
+@router.get('/sites/{site_id}/workers', response_model=list[Worker])
+async def list_workers(site_id: str, db: HeatShieldStore = Depends(store)) -> list[Worker]:
+    try:
+        return db.list_workers(site_id)
+    except FileNotFoundError:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='Site not found')
+
+
+@router.post('/sites/{site_id}/workers', response_model=Worker, status_code=status.HTTP_201_CREATED)
+async def create_worker(site_id: str, payload: WorkerCreate, db: HeatShieldStore = Depends(store)) -> Worker:
+    try:
+        return db.create_worker(site_id, payload)
+    except FileNotFoundError:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='Site not found')
+
+
 @router.get('/sites/{site_id}/intelligence', response_model=SiteIntelligence)
-async def site_intelligence(site_id: str, svc: SiteIntelligenceService = Depends(service)) -> SiteIntelligence:
+async def site_intelligence(
+    site_id: str,
+    svc: SiteIntelligenceService = Depends(intelligence_service),
+) -> SiteIntelligence:
     try:
         return await svc.get(site_id)
     except FileNotFoundError:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='Site not found')
-    except FortyGuardConfigurationError as exc:
-        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc))
 
 
 @router.post('/sites/{site_id}/actions/hydration-reminder', response_model=ActionAccepted)
-async def hydration_reminder(site_id: str, settings: Settings = Depends(get_settings)) -> ActionAccepted:
+async def hydration_reminder(site_id: str, db: HeatShieldStore = Depends(store)) -> ActionAccepted:
     try:
-        load = load_site_fixture_for_action(site_id)
+        workers = db.list_workers(site_id)
     except FileNotFoundError:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='Site not found')
 
-    if settings.heatshield_use_fixtures:
-        return ActionAccepted(accepted=True, message=f"Hydration reminder queued for {load.site.name} in development mode")
+    active = [worker for worker in workers if worker.status == 'active']
+    if not active:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail='No active workers are assigned to this site.')
 
+    # Notification provider is intentionally explicit. We never claim a real
+    # message was delivered until a provider is connected.
     raise HTTPException(
         status_code=status.HTTP_501_NOT_IMPLEMENTED,
-        detail='Notification delivery provider is not configured yet.',
+        detail='Worker notification delivery is not configured yet.',
     )
-
-
-def load_site_fixture_for_action(site_id: str) -> SiteIntelligence:
-    from app.services.fixtures import load_site_fixture
-    return load_site_fixture(site_id)
