@@ -1,4 +1,4 @@
-import type { Site, SiteCreate, SiteIntelligence, Worker, WorkerCreate } from '../types/site'
+import type { OperationalPlan, Site, SiteCreate, SiteIntelligence, Worker, WorkerCreate } from '../types/site'
 
 const BASE_URL = import.meta.env.VITE_API_BASE_URL ?? ''
 
@@ -44,6 +44,9 @@ export const api = {
   },
   getSiteIntelligence(siteId: string, signal?: AbortSignal) {
     return request<SiteIntelligence>(`/api/sites/${siteId}/intelligence`, { signal })
+  },
+  generatePlan(siteId: string, signal?: AbortSignal) {
+    return request<OperationalPlan>(`/api/sites/${siteId}/plan`, { method: 'POST', signal })
   },
   listWorkers(siteId: string, signal?: AbortSignal) {
     return request<Worker[]>(`/api/sites/${siteId}/workers`, { signal })
