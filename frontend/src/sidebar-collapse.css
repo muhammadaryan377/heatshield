@@ -1,0 +1,100 @@
+.app-shell {
+  transition: grid-template-columns 180ms ease;
+}
+
+.sidebar {
+  position: sticky;
+  overflow: visible;
+  transition: transform 180ms ease, opacity 140ms ease;
+}
+
+.sidebar__hide-button {
+  position: absolute;
+  top: 62px;
+  right: -14px;
+  z-index: 40;
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  border: 1px solid #d7e2e1;
+  border-radius: 999px;
+  background: #fff;
+  color: #45615d;
+  box-shadow: 0 5px 16px rgba(23, 57, 52, .12);
+  cursor: pointer;
+  transition: background 150ms ease, color 150ms ease, transform 150ms ease, box-shadow 150ms ease;
+}
+
+.sidebar__hide-button:hover {
+  background: #edf7f5;
+  color: #0b8b87;
+  transform: translateX(-1px);
+  box-shadow: 0 7px 20px rgba(23, 57, 52, .16);
+}
+
+.sidebar__hide-button:focus-visible,
+.sidebar-reopen:focus-visible {
+  outline: 3px solid rgba(11, 139, 135, .18);
+  outline-offset: 2px;
+}
+
+.app-shell--sidebar-hidden {
+  grid-template-columns: 0 minmax(0, 1fr);
+}
+
+.app-shell--sidebar-hidden .sidebar {
+  width: 0;
+  min-width: 0;
+  border-right: 0;
+  opacity: 0;
+  overflow: hidden;
+  transform: translateX(-100%);
+  pointer-events: none;
+}
+
+.sidebar-reopen {
+  position: fixed;
+  left: 0;
+  top: 50%;
+  z-index: 70;
+  width: 36px;
+  height: 54px;
+  display: grid;
+  place-items: center;
+  border: 1px solid #d4e1df;
+  border-left: 0;
+  border-radius: 0 12px 12px 0;
+  background: rgba(255, 255, 255, .97);
+  color: #315651;
+  box-shadow: 5px 8px 22px rgba(25, 57, 52, .14);
+  cursor: pointer;
+  transform: translateY(-50%);
+  backdrop-filter: blur(10px);
+  transition: width 150ms ease, background 150ms ease, color 150ms ease;
+}
+
+.sidebar-reopen:hover {
+  width: 42px;
+  background: #edf8f6;
+  color: #0b8b87;
+}
+
+@media (max-width: 760px) {
+  .sidebar__hide-button {
+    top: 58px;
+  }
+
+  .sidebar-reopen {
+    top: 44%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .app-shell,
+  .sidebar,
+  .sidebar__hide-button,
+  .sidebar-reopen {
+    transition: none;
+  }
+}
