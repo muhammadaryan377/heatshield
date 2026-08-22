@@ -4,6 +4,7 @@ import App from './App'
 import './styles.css'
 import './functional.css'
 import './site-builder-v2.css'
+import './sidebar-collapse.css'
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
