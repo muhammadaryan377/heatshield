@@ -16,6 +16,16 @@ import type { Site, SiteIntelligence } from '../types/site'
 
 const STORAGE_KEY = 'heatshield:selected-site'
 
+function isAbortError(error: unknown, signal?: AbortSignal) {
+  if (signal?.aborted) return true
+  if (error instanceof DOMException && error.name === 'AbortError') return true
+  if (error instanceof Error) {
+    const message = error.message.toLowerCase()
+    return error.name === 'AbortError' || message.includes('aborted') || message.includes('aborterror')
+  }
+  return false
+}
+
 export function SiteIntelligencePage() {
   const [searchParams, setSearchParams] = useSearchParams()
   const [sites, setSites] = useState<Site[]>([])
@@ -31,39 +41,71 @@ export function SiteIntelligencePage() {
 
   useEffect(() => {
     const controller = new AbortController()
+    let active = true
+
     setSitesLoading(true)
+    setError(null)
+
     api.listSites(controller.signal)
       .then((loadedSites) => {
+        if (!active || controller.signal.aborted) return
         setSites(loadedSites)
         const requested = searchParams.get('site')
         const stored = localStorage.getItem(STORAGE_KEY)
         const preferred = [requested, stored].find((id) => id && loadedSites.some((site) => site.id === id))
         setSelectedSiteId(preferred ?? loadedSites[0]?.id ?? null)
       })
-      .catch((err: unknown) => setError(err instanceof Error ? err.message : 'Unable to load sites.'))
-      .finally(() => setSitesLoading(false))
-    return () => controller.abort()
+      .catch((err: unknown) => {
+        if (!active || isAbortError(err, controller.signal)) return
+        setError(err instanceof Error ? err.message : 'Unable to load sites.')
+      })
+      .finally(() => {
+        if (active && !controller.signal.aborted) setSitesLoading(false)
+      })
+
+    return () => {
+      active = false
+      controller.abort()
+    }
+    // We intentionally read the initial query parameter once. Site changes are
+    // handled by selectSite and mirrored back to the URL below.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   useEffect(() => {
     if (!selectedSiteId) {
       setData(null)
+      setLoading(false)
       return
     }
+
     localStorage.setItem(STORAGE_KEY, selectedSiteId)
     setSearchParams({ site: selectedSiteId }, { replace: true })
+
     const controller = new AbortController()
+    let active = true
+
     setLoading(true)
     setError(null)
+
     api.getSiteIntelligence(selectedSiteId, controller.signal)
-      .then(setData)
+      .then((response) => {
+        if (!active || controller.signal.aborted) return
+        setData(response)
+      })
       .catch((err: unknown) => {
-        if (err instanceof DOMException && err.name === 'AbortError') return
+        if (!active || isAbortError(err, controller.signal)) return
         setError(err instanceof Error ? err.message : 'Unable to load site intelligence.')
       })
-      .finally(() => { if (!controller.signal.aborted) setLoading(false) })
-    return () => controller.abort()
-  }, [selectedSiteId, requestKey])
+      .finally(() => {
+        if (active && !controller.signal.aborted) setLoading(false)
+      })
+
+    return () => {
+      active = false
+      controller.abort()
+    }
+  }, [selectedSiteId, requestKey, setSearchParams])
 
   const selectSite = (siteId: string) => {
     setSelectedSiteId(siteId)
