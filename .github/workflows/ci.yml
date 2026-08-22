@@ -1,0 +1,89 @@
+name: HeatShield CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm install
+      - run: npm run build
+
+  backend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+      - run: pip install -r requirements.txt
+      - run: python -m compileall app
+      - name: Smoke test real setup flow
+        env:
+          DATABASE_PATH: /tmp/heatshield-ci.db
+          HEATSHIELD_USE_FIXTURES: 'false'
+        run: |
+          python - <<'PY'
+          from fastapi.testclient import TestClient
+          from app.main import app
+
+          client = TestClient(app)
+          assert client.get('/api/sites').json() == []
+
+          site_payload = {
+              'name': 'CI Work Site',
+              'address': 'Test work area',
+              'center': {'lat': 25.2048, 'lng': 55.2708},
+              'polygon': [
+                  {'lat': 25.2040, 'lng': 55.2700},
+                  {'lat': 25.2054, 'lng': 55.2701},
+                  {'lat': 25.2050, 'lng': 55.2715},
+              ],
+              'zones': [],
+          }
+          site_response = client.post('/api/sites', json=site_payload)
+          assert site_response.status_code == 201, site_response.text
+          site = site_response.json()
+
+          intelligence = client.get(f"/api/sites/{site['id']}/intelligence")
+          assert intelligence.status_code == 200, intelligence.text
+          payload = intelligence.json()
+          assert payload['workers'] == []
+          assert payload['conditions'] is None
+          assert payload['dataStatus'] == 'configuration_required'
+
+          worker_payload = {
+              'name': 'Test Worker',
+              'role': 'Roofer',
+              'location': 'Roof Area',
+              'locationId': 'roof-area',
+              'coordinate': {'lat': 25.2048, 'lng': 55.2708},
+              'task': 'Roof installation',
+              'workIntensity': 'heavy',
+              'sunExposure': 'direct',
+              'shadeAccess': 'limited',
+              'waterAccess': True,
+          }
+          worker_response = client.post(f"/api/sites/{site['id']}/workers", json=worker_payload)
+          assert worker_response.status_code == 201, worker_response.text
+          assert len(client.get(f"/api/sites/{site['id']}/workers").json()) == 1
+          print('HeatShield setup flow smoke test passed')
+          PY
