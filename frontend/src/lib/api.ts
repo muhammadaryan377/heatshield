@@ -11,6 +11,16 @@ import type {
 
 const BASE_URL = import.meta.env.VITE_API_BASE_URL ?? ''
 
+export interface ConfigStatus {
+  fortyguardConfigured: boolean
+  fortyguardBaseUrl: string
+  nwsFallbackEnabled: boolean
+  nwsBaseUrl: string
+  deepseekConfigured: boolean
+  fixturesEnabled: boolean
+  environment: string
+}
+
 export class ApiError extends Error {
   status: number
 
@@ -45,6 +55,9 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export const api = {
+  getConfigStatus(signal?: AbortSignal) {
+    return request<ConfigStatus>('/api/config/status', { signal })
+  },
   listSites(signal?: AbortSignal) {
     return request<Site[]>('/api/sites', { signal })
   },
