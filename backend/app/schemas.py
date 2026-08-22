@@ -219,10 +219,12 @@ class OperationalPlan(CamelModel):
 class ThermalMapRequest(CamelModel):
     mode: Literal['site', 'custom'] = 'site'
     polygon: list[Coordinate] | None = None
-    granularityMeters: int = Field(default=100, ge=50, le=500)
+    granularityMeters: int = 100
 
     @model_validator(mode='after')
-    def validate_custom_polygon(self):
+    def validate_request(self):
+        if self.granularityMeters not in {60, 80, 100}:
+            raise ValueError('FortyGuard granularity must be 60, 80, or 100 meters.')
         if self.mode == 'custom' and (self.polygon is None or len(self.polygon) < 3):
             raise ValueError('A custom thermal area needs at least three map points.')
         if self.polygon is not None and len(self.polygon) > 60:
@@ -250,6 +252,70 @@ class ThermalMapResponse(CamelModel):
     hottestTileId: str | None = None
     coolestTileId: str | None = None
     tiles: list[ThermalTile] = Field(default_factory=list)
+    message: str | None = None
+    cached: bool = False
+
+
+class FortyGuardProfileRequest(CamelModel):
+    date: str | None = None
+    thresholdC: float = Field(default=30.0, ge=-30.0, le=70.0)
+    granularityMeters: int = 100
+
+    @model_validator(mode='after')
+    def validate_granularity(self):
+        if self.granularityMeters not in {60, 80, 100}:
+            raise ValueError('FortyGuard granularity must be 60, 80, or 100 meters.')
+        return self
+
+
+class FortyGuardLayerStatus(CamelModel):
+    analyticType: Literal['tcm', 'time_of_measure', 'exceedance', 'persistence']
+    status: Literal['verified', 'unavailable']
+    activityId: str | None = None
+    cellCount: int = 0
+    units: str | None = None
+    minValue: float | None = None
+    maxValue: float | None = None
+    meanValue: float | None = None
+    message: str | None = None
+
+
+class FortyGuardWorkerExposure(CamelModel):
+    workerId: str
+    workerName: str
+    role: str
+    area: str
+    evidenceStatus: Literal['complete', 'partial', 'unmatched']
+    peakTemperatureC: float | None = None
+    peakHourUtc: int | None = None
+    peakHourLocal: str | None = None
+    hoursAboveThreshold: float | None = None
+    persistenceHours: float | None = None
+    thresholdC: float
+
+
+class FortyGuardDailyProfile(CamelModel):
+    siteId: str
+    siteName: str
+    date: str
+    timezoneName: str
+    thresholdC: float
+    granularityMeters: int
+    dataStatus: Literal['verified', 'partial', 'unavailable', 'configuration_required']
+    generatedAt: str
+    providerRequestCount: int = 0
+    tcmCellCount: int = 0
+    minTemperatureC: float | None = None
+    meanTemperatureC: float | None = None
+    maxTemperatureC: float | None = None
+    peakHourUtc: int | None = None
+    peakHourLocal: str | None = None
+    meanHoursAboveThreshold: float | None = None
+    maxHoursAboveThreshold: float | None = None
+    meanPersistenceHours: float | None = None
+    maxPersistenceHours: float | None = None
+    layers: list[FortyGuardLayerStatus] = Field(default_factory=list)
+    workers: list[FortyGuardWorkerExposure] = Field(default_factory=list)
     message: str | None = None
     cached: bool = False
 
