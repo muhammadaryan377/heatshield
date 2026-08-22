@@ -31,7 +31,7 @@ export function SiteStatusPanel({ data, onRefresh }: SiteStatusPanelProps) {
   const providerFooter = conditions ? `${data.isLive ? 'Live' : 'Verified'} • ${source}` : 'Awaiting provider'
   const statusLabel = conditions
     ? data.conditionSource === 'nws'
-      ? 'Live • NWS fallback'
+      ? 'Live • NWS conditions'
       : data.isLive ? 'Live • FortyGuard' : 'Recent • FortyGuard'
     : 'Waiting for live data'
 
@@ -61,8 +61,8 @@ export function SiteStatusPanel({ data, onRefresh }: SiteStatusPanelProps) {
         <div className="live-data-empty">
           <AlertTriangle size={19} />
           <div>
-            <strong>Atmospheric conditions verified by NWS</strong>
-            <p>{data.thermalMessage ?? 'FortyGuard spatial thermal intelligence is temporarily unavailable.'} HeatShield is not inventing thermal hotspots while that layer is unavailable.</p>
+            <strong>Live atmospheric conditions verified by NWS</strong>
+            <p>{data.thermalMessage ?? 'Current/recent FortyGuard thermal cells are not available for this site right now.'} HeatShield keeps the two sources separate and does not fabricate spatial hotspots.</p>
           </div>
         </div>
       )}
