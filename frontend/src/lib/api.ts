@@ -1,4 +1,4 @@
-import type { SiteIntelligence } from '../types/site'
+import type { Site, SiteCreate, SiteIntelligence, Worker, WorkerCreate } from '../types/site'
 
 const BASE_URL = import.meta.env.VITE_API_BASE_URL ?? ''
 
@@ -36,8 +36,20 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export const api = {
+  listSites(signal?: AbortSignal) {
+    return request<Site[]>('/api/sites', { signal })
+  },
+  createSite(payload: SiteCreate) {
+    return request<Site>('/api/sites', { method: 'POST', body: JSON.stringify(payload) })
+  },
   getSiteIntelligence(siteId: string, signal?: AbortSignal) {
     return request<SiteIntelligence>(`/api/sites/${siteId}/intelligence`, { signal })
+  },
+  listWorkers(siteId: string, signal?: AbortSignal) {
+    return request<Worker[]>(`/api/sites/${siteId}/workers`, { signal })
+  },
+  createWorker(siteId: string, payload: WorkerCreate) {
+    return request<Worker>(`/api/sites/${siteId}/workers`, { method: 'POST', body: JSON.stringify(payload) })
   },
   sendHydrationReminder(siteId: string) {
     return request<{ accepted: boolean; message: string }>(
