@@ -4,6 +4,7 @@ import {
   CircleHelp,
   Home,
   MapPin,
+  PanelLeftClose,
   Settings,
   UserPlus,
 } from 'lucide-react'
@@ -19,10 +20,26 @@ const navItems = [
   { to: '/settings', label: 'Settings', icon: Settings },
 ]
 
-export function Sidebar() {
+interface SidebarProps {
+  hidden: boolean
+  onHide: () => void
+}
+
+export function Sidebar({ hidden, onHide }: SidebarProps) {
   return (
-    <aside className="sidebar">
+    <aside className={`sidebar${hidden ? ' sidebar--hidden' : ''}`} aria-hidden={hidden}>
       <div className="sidebar__brand"><BrandLogo /></div>
+
+      <button
+        type="button"
+        className="sidebar__hide-button"
+        onClick={onHide}
+        aria-label="Hide navigation sidebar"
+        title="Hide sidebar"
+      >
+        <PanelLeftClose size={18} strokeWidth={1.9} />
+      </button>
+
       <nav className="sidebar__nav" aria-label="Primary navigation">
         {navItems.map(({ to, label, icon: Icon }) => (
           <NavLink
