@@ -52,6 +52,7 @@ export function HistoricalHeatMap({ site, result, metric, onMetricChange }: Hist
   const sitePolygonRef = useRef<google.maps.Polygon | null>(null)
   const [mapError, setMapError] = useState<string | null>(null)
   const [mapType, setMapType] = useState<'satellite' | 'roadmap'>('satellite')
+  const [mapVersion, setMapVersion] = useState(0)
 
   const metricValues = useMemo(() => result.cells
     .map((cell) => cellValue(cell, metric))
@@ -65,6 +66,7 @@ export function HistoricalHeatMap({ site, result, metric, onMetricChange }: Hist
 
     loadGoogleMaps(apiKey).then((googleInstance) => {
       if (cancelled || !containerRef.current) return
+      setMapError(null)
       const map = new googleInstance.maps.Map(containerRef.current, {
         center: site.center,
         zoom: 16,
@@ -89,6 +91,7 @@ export function HistoricalHeatMap({ site, result, metric, onMetricChange }: Hist
         clickable: false,
         zIndex: 20,
       })
+      setMapVersion((value) => value + 1)
     }).catch((error: Error) => { if (!cancelled) setMapError(error.message) })
 
     return () => {
@@ -170,7 +173,7 @@ export function HistoricalHeatMap({ site, result, metric, onMetricChange }: Hist
       zoneMarkersRef.current.push(marker)
       infoRef.current.push(info)
     })
-  }, [max, metric, min, result.cells, result.zones, site.zones])
+  }, [mapVersion, max, metric, min, result.cells, result.zones, site.zones])
 
   const hasMap = Boolean(apiKey) && !mapError
 
