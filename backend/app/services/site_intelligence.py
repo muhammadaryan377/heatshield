@@ -12,10 +12,9 @@ from app.services.store import HeatShieldStore
 RiskLevel = Literal['low', 'medium', 'high', 'extreme']
 
 
-# Process-local circuit breaker. A completed zero-tile sequence can consume
-# provider work even though no usable thermal cells are returned. Once that
-# happens, HeatShield serves official NWS conditions for a short period before
-# checking FortyGuard again.
+# Process-local circuit breaker. Only completed zero-tile sequences trip this
+# cooldown. Transport/provider errors remain retryable and are not presented as
+# proof that FortyGuard itself is unavailable.
 _FORTYGUARD_FAILURE_UNTIL: dict[str, datetime] = {}
 
 
@@ -110,6 +109,11 @@ class SiteIntelligenceService:
             _FORTYGUARD_FAILURE_UNTIL[site_id] = now + timedelta(seconds=seconds)
 
     @staticmethod
+    def _is_zero_tile_error(exc: Exception) -> bool:
+        message = str(exc).casefold()
+        return 'zero temperature tiles' in message or 'no usable temperature cells' in message
+
+    @staticmethod
     def _with_worker_risk(workers: list[Worker], heat_index: float) -> tuple[list[Worker], int]:
         evaluated = [
             worker.model_copy(update={'risk': evaluate_worker_exposure(worker, heat_index)})
@@ -142,7 +146,7 @@ class SiteIntelligenceService:
         station = observation.station_name or observation.station_id or 'NWS station'
         status_message = (
             f'Current atmospheric conditions are from the National Weather Service ({station}). '
-            f'{thermal_message} Spatial FortyGuard hotspots are not inferred while thermal tiles are unavailable.'
+            f'{thermal_message} Spatial FortyGuard hotspots are not inferred when current thermal cells are unavailable.'
         )
         return SiteIntelligence(
             site=site,
@@ -181,16 +185,19 @@ class SiteIntelligenceService:
                     site=site,
                     workers=workers,
                     thermal_status='unavailable',
-                    thermal_message='FortyGuard thermal retry is temporarily paused after recent zero-tile responses.',
+                    thermal_message=(
+                        'Current/recent FortyGuard thermal cells returned empty results, so HeatShield is waiting briefly before retrying them. '
+                        'FortyGuard remains configured; this is a live-tile availability state, not an API-key failure.'
+                    ),
                 )
             except NWSAPIError as exc:
                 return SiteIntelligence(
                     site=site,
                     workers=workers,
                     dataStatus='provider_unavailable',
-                    statusMessage=f'FortyGuard is in retry cooldown and NWS fallback failed: {exc}',
+                    statusMessage=f'FortyGuard current-tile retry is in cooldown and NWS fallback failed: {exc}',
                     thermalStatus='unavailable',
-                    thermalMessage='FortyGuard thermal retry is temporarily paused.',
+                    thermalMessage='Current/recent FortyGuard thermal cells are in a short retry cooldown.',
                 )
 
         try:
@@ -212,13 +219,19 @@ class SiteIntelligenceService:
                     thermalStatus='not_configured',
                 )
         except FortyGuardAPIError as exc:
-            self._trip_fortyguard_circuit(site_id, now)
+            zero_tiles = self._is_zero_tile_error(exc)
+            if zero_tiles:
+                self._trip_fortyguard_circuit(site_id, now)
             try:
                 return await self._nws_fallback(
                     site=site,
                     workers=workers,
                     thermal_status='unavailable',
-                    thermal_message=f'FortyGuard thermal layer unavailable: {exc}',
+                    thermal_message=(
+                        'FortyGuard is configured, but no current/recent spatial temperature cells were available for this site.'
+                        if zero_tiles
+                        else f'FortyGuard live request could not be completed: {exc}'
+                    ),
                 )
             except NWSAPIError as nws_exc:
                 return SiteIntelligence(
