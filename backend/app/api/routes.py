@@ -64,6 +64,8 @@ async def create_worker(site_id: str, payload: WorkerCreate, db: HeatShieldStore
         return db.create_worker(site_id, payload)
     except FileNotFoundError:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='Site not found')
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc))
 
 
 @router.get('/sites/{site_id}/intelligence', response_model=SiteIntelligence)
