@@ -1,4 +1,13 @@
-import type { OperationalPlan, Site, SiteCreate, SiteIntelligence, Worker, WorkerCreate } from '../types/site'
+import type {
+  OperationalPlan,
+  Site,
+  SiteCreate,
+  SiteIntelligence,
+  ThermalMapRequest,
+  ThermalMapResponse,
+  Worker,
+  WorkerCreate,
+} from '../types/site'
 
 const BASE_URL = import.meta.env.VITE_API_BASE_URL ?? ''
 
@@ -44,6 +53,13 @@ export const api = {
   },
   getSiteIntelligence(siteId: string, signal?: AbortSignal) {
     return request<SiteIntelligence>(`/api/sites/${siteId}/intelligence`, { signal })
+  },
+  generateThermalMap(siteId: string, payload: ThermalMapRequest, signal?: AbortSignal) {
+    return request<ThermalMapResponse>(`/api/sites/${siteId}/heatmap`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+      signal,
+    })
   },
   generatePlan(siteId: string, signal?: AbortSignal) {
     return request<OperationalPlan>(`/api/sites/${siteId}/plan`, { method: 'POST', signal })
