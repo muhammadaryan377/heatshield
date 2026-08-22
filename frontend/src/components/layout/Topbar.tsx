@@ -71,7 +71,11 @@ export function Topbar({
         <kbd>⌘K</kbd>
       </label>
       <button className="icon-button" type="button" aria-label="Notifications"><Bell size={20} /></button>
-      <button className="button button--primary topbar__plan-button" onClick={() => navigate('/plan')} disabled={!selectedSiteId}>
+      <button
+        className="button button--primary topbar__plan-button"
+        onClick={() => selectedSiteId && navigate(`/plan?site=${encodeURIComponent(selectedSiteId)}`)}
+        disabled={!selectedSiteId}
+      >
         <Sparkles size={17} />
         Generate Plan
       </button>
