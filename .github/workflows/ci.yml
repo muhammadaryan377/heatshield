@@ -91,6 +91,45 @@ jobs:
           }
           worker_response = client.post(f"/api/sites/{site['id']}/workers", json=worker_payload)
           assert worker_response.status_code == 201, worker_response.text
+          worker = worker_response.json()
           assert len(client.get(f"/api/sites/{site['id']}/workers").json()) == 1
-          print('HeatShield setup flow smoke test passed')
+
+          zone_response = client.post(
+              f"/api/sites/{site['id']}/zones",
+              json={
+                  'name': 'Approved Roof Zone',
+                  'type': 'roof',
+                  'center': {'lat': 25.2048, 'lng': 55.2708},
+                  'allowedTasks': ['Roof installation'],
+                  'operationalApproved': True,
+              },
+          )
+          assert zone_response.status_code == 201, zone_response.text
+          assert len(zone_response.json()['zones']) == 1
+
+          planner = client.post(
+              f"/api/sites/{site['id']}/operational-planner",
+              json={'offsetsHours': [1], 'granularityMeters': 100, 'minImprovementC': 1},
+          )
+          assert planner.status_code == 200, planner.text
+          planner_payload = planner.json()
+          assert planner_payload['providerRequestCount'] == 0
+          assert planner_payload['approvedZoneCount'] == 1
+          assert len(planner_payload['workers']) == 1
+          assert planner_payload['workers'][0]['workerId'] == worker['id']
+          assert planner_payload['workers'][0]['now']['status'] == 'unavailable'
+
+          approval = client.post(
+              f"/api/sites/{site['id']}/operational-planner/approvals",
+              json={'workerId': worker['id'], 'choice': 'now'},
+          )
+          assert approval.status_code == 201, approval.text
+          assert approval.json()['status'] == 'pending_verification'
+
+          verification = client.post(
+              f"/api/sites/{site['id']}/operational-planner/approvals/{approval.json()['id']}/verify"
+          )
+          assert verification.status_code == 200, verification.text
+          assert verification.json()['status'] == 'verification_unavailable'
+          print('HeatShield setup and operational planner smoke test passed')
           PY
