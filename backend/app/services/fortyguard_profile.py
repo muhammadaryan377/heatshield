@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from collections import Counter
 from datetime import date, datetime, timezone
 from typing import Any
 from zoneinfo import ZoneInfo
@@ -63,43 +62,36 @@ def _tile_id(feature: dict[str, Any]) -> str | None:
 
 
 def _tcm_temperature(feature: dict[str, Any]) -> float | None:
-    """Return the daily thermal value without treating analysis `value` as °C.
-
-    The supplied FortyGuard material distinguishes TCM temperature fields from
-    analysis-layer `properties.value`. For a daily TCM response, max_temperature
-    is preferred because the daily profile is used as a peak-exposure layer;
-    average_temperature/temperature remain supported for provider variants.
-    """
+    """Read only TCM temperature fields; never reinterpret analysis `value` as °C."""
     props = _properties(feature)
     for key in ('max_temperature', 'average_temperature', 'temperature'):
         parsed = _number(props.get(key))
         if parsed is not None:
             return parsed
-
-    # Some 24-hour TCM captures expose hourly values as 00..23. When present,
-    # use the measured maximum rather than inventing a peak from another source.
     hourly = [_number(props.get(f'{hour:02d}')) for hour in range(24)]
     measured = [value for value in hourly if value is not None]
     return max(measured) if measured else None
 
 
-def _analysis_value(feature: dict[str, Any]) -> float | None:
-    return _number(_properties(feature).get('value'))
+def _analysis_value(feature: dict[str, Any] | None) -> float | None:
+    return _number(_properties(feature).get('value')) if feature else None
 
 
-def _hourly_peak_hour(feature: dict[str, Any]) -> int | None:
+def _hourly_peak_hour(feature: dict[str, Any] | None) -> int | None:
+    if not feature:
+        return None
     props = _properties(feature)
     values: list[tuple[float, int]] = []
     for hour in range(24):
         parsed = _number(props.get(f'{hour:02d}'))
         if parsed is not None:
             values.append((parsed, hour))
-    if not values:
-        return None
-    return max(values, key=lambda item: item[0])[1]
+    return max(values, key=lambda item: item[0])[1] if values else None
 
 
-def _find_containing(features: list[dict[str, Any]], *, latitude: float, longitude: float) -> dict[str, Any] | None:
+def _find_containing(
+    features: list[dict[str, Any]], *, latitude: float, longitude: float
+) -> dict[str, Any] | None:
     for feature in features:
         geometry = _geometry(feature)
         if geometry and FortyGuardClient._geometry_contains_point(geometry, longitude, latitude):
@@ -118,14 +110,22 @@ def _match_tile(features: list[dict[str, Any]], source_feature: dict[str, Any]) 
     if not geometry:
         return None
     coordinates = geometry.get('coordinates')
-    if geometry.get('type') == 'Polygon' and isinstance(coordinates, list) and coordinates and isinstance(coordinates[0], list):
-        ring = coordinates[0]
-        numeric = [position for position in ring if isinstance(position, list) and len(position) >= 2 and all(isinstance(v, (int, float)) for v in position[:2])]
-        if numeric:
-            longitude = sum(float(position[0]) for position in numeric) / len(numeric)
-            latitude = sum(float(position[1]) for position in numeric) / len(numeric)
-            return _find_containing(features, latitude=latitude, longitude=longitude)
-    return None
+    if geometry.get('type') != 'Polygon' or not isinstance(coordinates, list) or not coordinates:
+        return None
+    ring = coordinates[0]
+    if not isinstance(ring, list):
+        return None
+    numeric = [
+        position for position in ring
+        if isinstance(position, list)
+        and len(position) >= 2
+        and all(isinstance(value, (int, float)) for value in position[:2])
+    ]
+    if not numeric:
+        return None
+    longitude = sum(float(position[0]) for position in numeric) / len(numeric)
+    latitude = sum(float(position[1]) for position in numeric) / len(numeric)
+    return _find_containing(features, latitude=latitude, longitude=longitude)
 
 
 def _local_hour_label(hour_utc: int | None, study_date: date, timezone_name: str) -> str | None:
@@ -135,17 +135,23 @@ def _local_hour_label(hour_utc: int | None, study_date: date, timezone_name: str
         site_timezone = ZoneInfo(timezone_name)
     except Exception:
         site_timezone = ZoneInfo('UTC')
-    moment = datetime(study_date.year, study_date.month, study_date.day, hour_utc % 24, tzinfo=timezone.utc)
-    local = moment.astimezone(site_timezone)
-    return local.strftime('%-I:00 %p') if hasattr(local, 'strftime') else f'{local.hour:02d}:00'
+    moment = datetime(
+        study_date.year,
+        study_date.month,
+        study_date.day,
+        hour_utc % 24,
+        tzinfo=timezone.utc,
+    ).astimezone(site_timezone)
+    display_hour = moment.hour % 12 or 12
+    meridiem = 'AM' if moment.hour < 12 else 'PM'
+    return f'{display_hour}:00 {meridiem}'
 
 
 def _layer_status(
     analytic_type: str,
     activity_id: str | None,
     result: dict[str, Any] | None,
-    *,
-    error: str | None = None,
+    error: str | None,
 ) -> FortyGuardLayerStatus:
     if result is None:
         return FortyGuardLayerStatus(
@@ -157,13 +163,12 @@ def _layer_status(
 
     features = _features(result)
     stats = result.get('stats_data') if isinstance(result.get('stats_data'), dict) else {}
-    values: list[float] = []
     if analytic_type == 'tcm':
         values = [value for feature in features if (value := _tcm_temperature(feature)) is not None]
-        temp_stats = stats.get('temperature_stats') if isinstance(stats.get('temperature_stats'), dict) else {}
-        minimum = _number(temp_stats.get('minimum'))
-        maximum = _number(temp_stats.get('maximum'))
-        mean = _number(temp_stats.get('mean'))
+        temperature_stats = stats.get('temperature_stats') if isinstance(stats.get('temperature_stats'), dict) else {}
+        minimum = _number(temperature_stats.get('minimum'))
+        maximum = _number(temperature_stats.get('maximum'))
+        mean = _number(temperature_stats.get('mean'))
         units = '°C'
     else:
         values = [value for feature in features if (value := _analysis_value(feature)) is not None]
@@ -199,13 +204,7 @@ def _profile_key(site_id: str, request: FortyGuardProfileRequest, study_date: st
 
 
 class FortyGuardProfileService:
-    """Build a credit-aware, daily FortyGuard evidence profile for one work site.
-
-    This service keeps FortyGuard central without pretending a daily layer is a
-    current atmospheric observation. It combines four provider heatmap analyses:
-    TCM peak temperature, time of measure, exceedance and persistence. Worker
-    coordinates are joined to the spatial cells they actually occupy.
-    """
+    """Build a daily FortyGuard profile from four spatial provider layers."""
 
     def __init__(self, settings: Settings):
         self.settings = settings
@@ -285,26 +284,41 @@ class FortyGuardProfileService:
     ) -> list[FortyGuardWorkerExposure]:
         output: list[FortyGuardWorkerExposure] = []
         for worker in workers:
-            tcm = _find_containing(tcm_features, latitude=worker.coordinate.lat, longitude=worker.coordinate.lng)
+            tcm = _find_containing(
+                tcm_features,
+                latitude=worker.coordinate.lat,
+                longitude=worker.coordinate.lng,
+            )
             peak_temperature = _tcm_temperature(tcm) if tcm else None
 
-            time_feature = _find_containing(time_features, latitude=worker.coordinate.lat, longitude=worker.coordinate.lng)
-            peak_hour_utc = int(round(_analysis_value(time_feature))) if time_feature and _analysis_value(time_feature) is not None else (_hourly_peak_hour(tcm) if tcm else None)
+            time_feature = _find_containing(
+                time_features,
+                latitude=worker.coordinate.lat,
+                longitude=worker.coordinate.lng,
+            )
+            time_value = _analysis_value(time_feature)
+            peak_hour_utc = int(round(time_value)) if time_value is not None else _hourly_peak_hour(tcm)
             if peak_hour_utc is not None:
                 peak_hour_utc %= 24
 
-            exceedance_feature = _find_containing(exceedance_features, latitude=worker.coordinate.lat, longitude=worker.coordinate.lng)
-            persistence_feature = _find_containing(persistence_features, latitude=worker.coordinate.lat, longitude=worker.coordinate.lng)
-            exceedance = _analysis_value(exceedance_feature) if exceedance_feature else None
-            persistence = _analysis_value(persistence_feature) if persistence_feature else None
+            exceedance_feature = _find_containing(
+                exceedance_features,
+                latitude=worker.coordinate.lat,
+                longitude=worker.coordinate.lng,
+            )
+            persistence_feature = _find_containing(
+                persistence_features,
+                latitude=worker.coordinate.lat,
+                longitude=worker.coordinate.lng,
+            )
+            exceedance = _analysis_value(exceedance_feature)
+            persistence = _analysis_value(persistence_feature)
 
-            values_present = sum(value is not None for value in (peak_temperature, peak_hour_utc, exceedance, persistence))
-            if values_present == 4:
-                evidence_status = 'complete'
-            elif values_present > 0:
-                evidence_status = 'partial'
-            else:
-                evidence_status = 'unmatched'
+            values_present = sum(
+                value is not None
+                for value in (peak_temperature, peak_hour_utc, exceedance, persistence)
+            )
+            evidence_status = 'complete' if values_present == 4 else 'partial' if values_present else 'unmatched'
 
             output.append(FortyGuardWorkerExposure(
                 workerId=worker.id,
@@ -364,10 +378,14 @@ class FortyGuardProfileService:
             _layer_status(analytic_type, *layer_results[analytic_type])
             for analytic_type in _ANALYTIC_TYPES
         ]
-        tcm_activity, tcm_result, tcm_error = layer_results['tcm']
+        _, tcm_result, tcm_error = layer_results['tcm']
         tcm_features = _features(tcm_result or {})
-        tcm_values = [value for feature in tcm_features if (value := _tcm_temperature(feature)) is not None]
+        tcm_values = [
+            value for feature in tcm_features
+            if (value := _tcm_temperature(feature)) is not None
+        ]
 
+        request_count = sum(1 for activity, _, _ in layer_results.values() if activity)
         if not tcm_values:
             profile = FortyGuardDailyProfile(
                 siteId=site.id,
@@ -378,7 +396,7 @@ class FortyGuardProfileService:
                 granularityMeters=request.granularityMeters,
                 dataStatus='unavailable',
                 generatedAt=now.isoformat(),
-                providerRequestCount=sum(1 for activity, _, _ in layer_results.values() if activity),
+                providerRequestCount=request_count,
                 layers=layers,
                 message=tcm_error or 'FortyGuard returned no usable TCM temperature cells for this date.',
             )
@@ -394,11 +412,21 @@ class FortyGuardProfileService:
             key=lambda feature: _tcm_temperature(feature) or float('-inf'),
         )
         hottest_time_feature = _match_tile(time_features, hottest_feature)
-        site_peak_hour_utc_value = _analysis_value(hottest_time_feature) if hottest_time_feature else _hourly_peak_hour(hottest_feature)
-        site_peak_hour_utc = int(round(site_peak_hour_utc_value)) % 24 if site_peak_hour_utc_value is not None else None
+        peak_value = _analysis_value(hottest_time_feature)
+        site_peak_hour_utc = (
+            int(round(peak_value)) % 24
+            if peak_value is not None
+            else _hourly_peak_hour(hottest_feature)
+        )
 
-        exceedance_values = [value for feature in exceedance_features if (value := _analysis_value(feature)) is not None]
-        persistence_values = [value for feature in persistence_features if (value := _analysis_value(feature)) is not None]
+        exceedance_values = [
+            value for feature in exceedance_features
+            if (value := _analysis_value(feature)) is not None
+        ]
+        persistence_values = [
+            value for feature in persistence_features
+            if (value := _analysis_value(feature)) is not None
+        ]
 
         worker_exposures = self._worker_exposures(
             workers,
@@ -411,9 +439,8 @@ class FortyGuardProfileService:
             threshold_c=request.thresholdC,
         )
 
-        verified_layer_count = sum(layer.status == 'verified' for layer in layers)
-        data_status = 'verified' if verified_layer_count == len(_ANALYTIC_TYPES) else 'partial'
         missing_layers = [layer.analyticType for layer in layers if layer.status != 'verified']
+        data_status = 'verified' if not missing_layers else 'partial'
         message = (
             'FortyGuard daily thermal profile verified across TCM, peak timing, exceedance and persistence.'
             if not missing_layers
@@ -429,7 +456,7 @@ class FortyGuardProfileService:
             granularityMeters=request.granularityMeters,
             dataStatus=data_status,
             generatedAt=now.isoformat(),
-            providerRequestCount=sum(1 for activity, _, _ in layer_results.values() if activity),
+            providerRequestCount=request_count,
             tcmCellCount=len(tcm_values),
             minTemperatureC=min(tcm_values),
             meanTemperatureC=sum(tcm_values) / len(tcm_values),
