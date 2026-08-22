@@ -1,11 +1,62 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from typing import Literal
 
 from app.core.config import Settings
-from app.schemas import Conditions, NextAction, Risk, SiteIntelligence
+from app.schemas import Conditions, NextAction, Risk, SiteIntelligence, Worker
 from app.services.fortyguard import FortyGuardAPIError, FortyGuardClient, FortyGuardConfigurationError
 from app.services.store import HeatShieldStore
+
+RiskLevel = Literal['low', 'medium', 'high', 'extreme']
+
+
+def evaluate_worker_exposure(worker: Worker, heat_index_c: float) -> RiskLevel:
+    """Deterministic operational screening from verified heat plus worker context.
+
+    This is a HeatShield planning signal, not a medical diagnosis. It deliberately
+    keeps provider measurements separate from the worker-context scoring layer.
+    """
+
+    score = 0
+    if heat_index_c >= 52:
+        score += 5
+    elif heat_index_c >= 39:
+        score += 4
+    elif heat_index_c >= 32:
+        score += 2
+    elif heat_index_c >= 27:
+        score += 1
+
+    if worker.workIntensity == 'heavy':
+        score += 2
+    elif worker.workIntensity == 'moderate':
+        score += 1
+
+    if worker.sunExposure == 'direct':
+        score += 2
+    elif worker.sunExposure == 'partial':
+        score += 1
+    elif worker.sunExposure == 'indoor':
+        score -= 1
+
+    if worker.shadeAccess == 'none':
+        score += 2
+    elif worker.shadeAccess == 'limited':
+        score += 1
+    elif worker.shadeAccess == 'available':
+        score -= 1
+
+    if worker.waterAccess is False:
+        score += 1
+
+    if score >= 9:
+        return 'extreme'
+    if score >= 6:
+        return 'high'
+    if score >= 3:
+        return 'medium'
+    return 'low'
 
 
 class SiteIntelligenceService:
@@ -63,8 +114,14 @@ class SiteIntelligenceService:
             summary = 'Current heat conditions are within the routine monitoring range.'
             detail = 'Continue normal precautions and keep monitoring changes.'
 
+        evaluated_workers = [
+            worker.model_copy(update={'risk': evaluate_worker_exposure(worker, heat_index)})
+            for worker in workers
+        ]
+        high_exposure_count = sum(worker.risk in ('high', 'extreme') for worker in evaluated_workers)
+
         next_action = None
-        if workers and level in ('medium', 'high', 'extreme'):
+        if evaluated_workers and level in ('medium', 'high', 'extreme'):
             next_action = NextAction(
                 title='Send hydration reminder to active workers',
                 detail='Recommended from the latest verified FortyGuard conditions.',
@@ -85,7 +142,7 @@ class SiteIntelligenceService:
                 weatherLabel='FortyGuard verified observation',
             ),
             risk=Risk(level=level, summary=summary, detail=detail),
-            workers=workers,
-            highExposureCount=sum(worker.risk in ('high', 'extreme') for worker in workers),
+            workers=evaluated_workers,
+            highExposureCount=high_exposure_count,
             nextAction=next_action,
         )
