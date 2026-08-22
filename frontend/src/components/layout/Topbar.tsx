@@ -7,7 +7,10 @@ interface TopbarProps {
   selectedSiteId: string | null
   observedAt?: string | null
   onSiteChange: (siteId: string) => void
-  onCreateSite: () => void
+  onCreateSite?: () => void
+  pageTitle?: string
+  pageSubtitle?: string
+  showAddSite?: boolean
 }
 
 function formatTimestamp(value?: string | null) {
@@ -23,12 +26,24 @@ function formatTimestamp(value?: string | null) {
   }).format(date)
 }
 
-export function Topbar({ sites, selectedSiteId, observedAt, onSiteChange, onCreateSite }: TopbarProps) {
+export function Topbar({
+  sites,
+  selectedSiteId,
+  observedAt,
+  onSiteChange,
+  onCreateSite,
+  pageTitle = 'Site Intelligence',
+  pageSubtitle,
+  showAddSite = true,
+}: TopbarProps) {
   const navigate = useNavigate()
 
   return (
-    <header className="topbar">
-      <h1 className="topbar__title">Site Intelligence</h1>
+    <header className={`topbar${pageSubtitle ? ' topbar--with-subtitle' : ''}`}>
+      <div className="topbar__title-group">
+        <h1 className="topbar__title">{pageTitle}</h1>
+        {pageSubtitle && <p>{pageSubtitle}</p>}
+      </div>
       <label className="topbar-control topbar-control--site topbar-site-select">
         <Building2 size={16} />
         <select
@@ -40,9 +55,11 @@ export function Topbar({ sites, selectedSiteId, observedAt, onSiteChange, onCrea
           {sites.map((site) => <option key={site.id} value={site.id}>{site.name}</option>)}
         </select>
       </label>
-      <button type="button" className="button button--quiet topbar-add-site" onClick={onCreateSite}>
-        <Plus size={16} /> Add Site
-      </button>
+      {showAddSite && onCreateSite && (
+        <button type="button" className="button button--quiet topbar-add-site" onClick={onCreateSite}>
+          <Plus size={16} /> Add Site
+        </button>
+      )}
       <div className="topbar-control topbar-control--date">
         <CalendarDays size={16} />
         <span>{formatTimestamp(observedAt)}</span>
