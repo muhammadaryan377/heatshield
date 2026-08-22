@@ -1,10 +1,21 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 
 from app.core.config import Settings, get_settings
-from app.schemas import ActionAccepted, OperationalPlan, Site, SiteCreate, SiteIntelligence, Worker, WorkerCreate
+from app.schemas import (
+    ActionAccepted,
+    OperationalPlan,
+    Site,
+    SiteCreate,
+    SiteIntelligence,
+    ThermalMapRequest,
+    ThermalMapResponse,
+    Worker,
+    WorkerCreate,
+)
 from app.services.operational_plan import OperationalPlanService
 from app.services.site_intelligence import SiteIntelligenceService
 from app.services.store import HeatShieldStore
+from app.services.thermal_map import ThermalMapService
 
 router = APIRouter(prefix='/api')
 
@@ -15,6 +26,10 @@ def intelligence_service(settings: Settings = Depends(get_settings)) -> SiteInte
 
 def plan_service(settings: Settings = Depends(get_settings)) -> OperationalPlanService:
     return OperationalPlanService(settings)
+
+
+def thermal_map_service(settings: Settings = Depends(get_settings)) -> ThermalMapService:
+    return ThermalMapService(settings)
 
 
 def store(settings: Settings = Depends(get_settings)) -> HeatShieldStore:
@@ -85,6 +100,20 @@ async def site_intelligence(
         return await svc.get(site_id)
     except FileNotFoundError:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='Site not found')
+
+
+@router.post('/sites/{site_id}/heatmap', response_model=ThermalMapResponse)
+async def generate_thermal_map(
+    site_id: str,
+    payload: ThermalMapRequest,
+    svc: ThermalMapService = Depends(thermal_map_service),
+) -> ThermalMapResponse:
+    try:
+        return await svc.generate(site_id, payload)
+    except FileNotFoundError:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='Site not found')
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc))
 
 
 @router.post('/sites/{site_id}/plan', response_model=OperationalPlan)
