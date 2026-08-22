@@ -34,9 +34,11 @@ export interface SiteCreate {
 export interface Worker {
   id: string
   siteId: string
+  workerCode?: string | null
   name: string
   initials: string
   role: string
+  team?: string | null
   location: string
   locationId: string
   status: WorkerStatus
@@ -50,11 +52,15 @@ export interface Worker {
   sunExposure?: 'indoor' | 'partial' | 'direct' | null
   shadeAccess?: 'available' | 'limited' | 'none' | null
   waterAccess?: boolean | null
+  supervisor?: string | null
+  notes?: string | null
 }
 
 export interface WorkerCreate {
+  workerCode?: string
   name: string
   role: string
+  team?: string
   location: string
   locationId: string
   coordinate: Coordinate
@@ -65,6 +71,9 @@ export interface WorkerCreate {
   sunExposure?: 'indoor' | 'partial' | 'direct'
   shadeAccess?: 'available' | 'limited' | 'none'
   waterAccess?: boolean
+  supervisor?: string
+  status?: WorkerStatus
+  notes?: string
 }
 
 export interface EnvironmentalMetric {
