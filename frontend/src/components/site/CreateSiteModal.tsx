@@ -21,10 +21,11 @@ interface CreateSiteModalProps {
 }
 
 const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY ?? ''
-const DEFAULT_CENTER = { lat: 25.2048, lng: 55.2708 }
+const USA_CENTER = { lat: 39.8283, lng: -98.5795 }
+const USA_DEFAULT_ZOOM = 4
 
 function averageCenter(points: Coordinate[]): Coordinate {
-  if (!points.length) return DEFAULT_CENTER
+  if (!points.length) return USA_CENTER
   return {
     lat: points.reduce((sum, point) => sum + point.lat, 0) / points.length,
     lng: points.reduce((sum, point) => sum + point.lng, 0) / points.length,
@@ -41,7 +42,7 @@ export function CreateSiteModal({ open, onClose, onCreated }: CreateSiteModalPro
   const [name, setName] = useState('')
   const [address, setAddress] = useState('')
   const [points, setPoints] = useState<Coordinate[]>([])
-  const [mapMessage, setMapMessage] = useState<string | null>(null)
+  const [mapMessage, setMapMessage] = useState<string | null>('Search anywhere in the USA, then draw the work-site boundary.')
   const [searching, setSearching] = useState(false)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -61,13 +62,17 @@ export function CreateSiteModal({ open, onClose, onCreated }: CreateSiteModalPro
         if (cancelled || !mapElement.current) return
 
         const map = new googleInstance.maps.Map(mapElement.current, {
-          center: DEFAULT_CENTER,
-          zoom: 15,
+          center: USA_CENTER,
+          zoom: USA_DEFAULT_ZOOM,
+          minZoom: 3,
           mapTypeId: googleInstance.maps.MapTypeId.SATELLITE,
           clickableIcons: false,
           streetViewControl: false,
           fullscreenControl: false,
           mapTypeControl: true,
+          mapTypeControlOptions: {
+            position: googleInstance.maps.ControlPosition.RIGHT_BOTTOM,
+          },
           gestureHandling: 'greedy',
         })
         mapRef.current = map
@@ -118,7 +123,7 @@ export function CreateSiteModal({ open, onClose, onCreated }: CreateSiteModalPro
     setAddress('')
     setPoints([])
     setError(null)
-    setMapMessage(null)
+    setMapMessage('Search anywhere in the USA, then draw the work-site boundary.')
     setSearching(false)
     locationMarkerRef.current?.setMap(null)
     locationMarkerRef.current = null
@@ -136,19 +141,25 @@ export function CreateSiteModal({ open, onClose, onCreated }: CreateSiteModalPro
     const geocoder = new window.google.maps.Geocoder()
     setSearching(true)
     setError(null)
-    setMapMessage('Finding location…')
+    setMapMessage('Finding location in the USA…')
 
-    geocoder.geocode({ address: address.trim() }, (results, status) => {
+    geocoder.geocode({ address: address.trim(), region: 'US' }, (results, status) => {
       setSearching(false)
       if (status !== 'OK' || !results?.[0]) {
-        setMapMessage('Location not found. Try a more specific address, or pan the map manually.')
+        setMapMessage('Location not found. Try a city, ZIP code, street address, or a more specific place name.')
         return
       }
 
       const result = results[0]
       const location = result.geometry.location
-      mapRef.current?.panTo(location)
-      mapRef.current?.setZoom(18)
+      if (result.geometry.viewport) {
+        mapRef.current?.fitBounds(result.geometry.viewport, 72)
+      } else {
+        mapRef.current?.panTo(location)
+        mapRef.current?.setZoom(18)
+      }
+      if ((mapRef.current?.getZoom() ?? 0) < 15) mapRef.current?.setZoom(17)
+      mapRef.current?.setMapTypeId(window.google.maps.MapTypeId.SATELLITE)
       setAddress(result.formatted_address)
 
       locationMarkerRef.current?.setMap(null)
@@ -176,6 +187,15 @@ export function CreateSiteModal({ open, onClose, onCreated }: CreateSiteModalPro
   const clearBoundary = () => {
     setPoints([])
     setError(null)
+  }
+
+  const showUSA = () => {
+    if (!mapRef.current) return
+    mapRef.current.panTo(USA_CENTER)
+    mapRef.current.setZoom(USA_DEFAULT_ZOOM)
+    locationMarkerRef.current?.setMap(null)
+    locationMarkerRef.current = null
+    setMapMessage('USA overview. Search a city, ZIP code, address, or place to jump to the work site.')
   }
 
   const submit = async (event: FormEvent) => {
@@ -221,7 +241,7 @@ export function CreateSiteModal({ open, onClose, onCreated }: CreateSiteModalPro
           <div>
             <span className="eyebrow">SITE SETUP</span>
             <h2 id="create-site-title">Create a work site</h2>
-            <p>Find the location, draw the complete work area, then save it to HeatShield.</p>
+            <p>Search the USA, draw the complete work area, then save it to HeatShield.</p>
           </div>
           <button type="button" className="icon-button" onClick={close} aria-label="Close site builder" disabled={saving}><X size={20} /></button>
         </div>
@@ -255,7 +275,7 @@ export function CreateSiteModal({ open, onClose, onCreated }: CreateSiteModalPro
               <div className="site-builder-section">
                 <div className="site-builder-section__heading">
                   <span>2</span>
-                  <div><strong>Find the location</strong><small>Optional — use search to jump to the work area.</small></div>
+                  <div><strong>Find the location</strong><small>Search by city, ZIP code, address, or place name.</small></div>
                 </div>
                 <label>
                   <span>Address / location</span>
@@ -264,7 +284,7 @@ export function CreateSiteModal({ open, onClose, onCreated }: CreateSiteModalPro
                       value={address}
                       onChange={(event) => setAddress(event.target.value)}
                       onKeyDown={addressKeyDown}
-                      placeholder="Search city, address or place"
+                      placeholder="e.g. Phoenix AZ, 85004, or street address"
                     />
                     <button type="button" onClick={findAddress} aria-label="Find address" disabled={!address.trim() || searching}>
                       {searching ? <LoaderCircle className="spin" size={18} /> : <Search size={18} />}
@@ -290,6 +310,7 @@ export function CreateSiteModal({ open, onClose, onCreated }: CreateSiteModalPro
                 <div className="site-builder-tools">
                   <button type="button" onClick={undoPoint} disabled={!points.length}><Undo2 size={16} /> Undo last point</button>
                   <button type="button" onClick={clearBoundary} disabled={!points.length}><RotateCcw size={16} /> Start boundary again</button>
+                  <button type="button" onClick={showUSA}><MapPin size={16} /> USA overview</button>
                 </div>
               </div>
 
@@ -306,10 +327,10 @@ export function CreateSiteModal({ open, onClose, onCreated }: CreateSiteModalPro
               <details className="site-builder-help">
                 <summary>How site selection works</summary>
                 <ol>
-                  <li>Search for the work location, or move the map manually.</li>
+                  <li>The map starts with a USA overview.</li>
+                  <li>Search a city, ZIP code, address, or place to jump to the work location.</li>
                   <li>Click the outside corners of the real work area.</li>
-                  <li>Use Undo if a point is misplaced.</li>
-                  <li>When the boundary is ready, press Save Site below.</li>
+                  <li>Use Undo if a point is misplaced, then press Save Site.</li>
                 </ol>
               </details>
 
@@ -337,9 +358,26 @@ export function CreateSiteModal({ open, onClose, onCreated }: CreateSiteModalPro
                 <p>Add `VITE_GOOGLE_MAPS_API_KEY` to the frontend environment to draw real site areas.</p>
               </div>
             )}
+
+            {apiKey && (
+              <div className="site-builder-map-search" role="search">
+                <Search size={18} />
+                <input
+                  value={address}
+                  onChange={(event) => setAddress(event.target.value)}
+                  onKeyDown={addressKeyDown}
+                  aria-label="Search USA map"
+                  placeholder="Search USA city, ZIP, address, or place…"
+                />
+                <button type="button" onClick={findAddress} disabled={!address.trim() || searching}>
+                  {searching ? <LoaderCircle className="spin" size={17} /> : 'Search'}
+                </button>
+              </div>
+            )}
+
             <div className="site-builder-map-tip">
               <MousePointer2 size={15} />
-              {hasBoundary ? `${points.length} points selected · boundary ready` : 'Click map corners to draw the work-site boundary'}
+              {hasBoundary ? `${points.length} points selected · boundary ready` : 'Search first, then click map corners to draw the work-site boundary'}
             </div>
             {mapMessage && <div className="site-builder-map-message">{mapMessage}</div>}
           </div>
