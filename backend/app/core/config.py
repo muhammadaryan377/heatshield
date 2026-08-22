@@ -28,6 +28,11 @@ class Settings(BaseSettings):
     fortyguard_poll_interval_seconds: float = 2.0
     fortyguard_max_poll_attempts: int = 60
     fortyguard_granularity_meters: int = 100
+    # The provider can complete the newest hour before temperature tiles are
+    # available. Retry a small number of recent *site-local* whole hours.
+    fortyguard_recent_hour_fallbacks: int = 3
+    # Avoid spending provider credits repeatedly on browser refreshes.
+    fortyguard_cache_ttl_seconds: int = 600
 
     deepseek_api_key: str | None = None
     deepseek_base_url: str = 'https://api.deepseek.com'
