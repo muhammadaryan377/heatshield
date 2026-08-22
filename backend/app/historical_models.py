@@ -8,7 +8,6 @@ from app.schemas import CamelModel, Coordinate
 
 
 class HistoricalHeatBehaviorRequest(CamelModel):
-    periodDays: Literal[7, 30, 90] = 30
     startDate: str | None = None
     endDate: str | None = None
     thresholdF: float = Field(default=95.0, ge=-20.0, le=160.0)
@@ -19,7 +18,7 @@ class HistoricalHeatBehaviorRequest(CamelModel):
         if self.granularityMeters not in {60, 80, 100}:
             raise ValueError('FortyGuard granularity must be 60, 80, or 100 meters.')
         if bool(self.startDate) != bool(self.endDate):
-            raise ValueError('Historical analysis needs both startDate and endDate for a custom range.')
+            raise ValueError('Historical analysis needs both startDate and endDate, or neither for the default last 30 days.')
         return self
 
 
