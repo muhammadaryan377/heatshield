@@ -68,6 +68,15 @@ jobs:
           assert payload['conditions'] is None
           assert payload['dataStatus'] == 'configuration_required'
 
+          profile = client.post(
+              f"/api/sites/{site['id']}/fortyguard-profile",
+              json={'date': '2024-07-15', 'thresholdC': 30, 'granularityMeters': 100},
+          )
+          assert profile.status_code == 200, profile.text
+          profile_payload = profile.json()
+          assert profile_payload['dataStatus'] == 'configuration_required'
+          assert profile_payload['providerRequestCount'] == 0
+
           worker_payload = {
               'name': 'Test Worker',
               'role': 'Roofer',
