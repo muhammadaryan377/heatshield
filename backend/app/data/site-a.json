@@ -1,0 +1,94 @@
+{
+  "site": {
+    "id": "site-a",
+    "name": "Site A - Construction Yard",
+    "address": "123 Industrial Way, Phoenix, AZ 85007",
+    "center": { "lat": 33.44893, "lng": -112.07470 },
+    "polygon": [
+      { "lat": 33.45023, "lng": -112.07605 },
+      { "lat": 33.45068, "lng": -112.07389 },
+      { "lat": 33.44933, "lng": -112.07275 },
+      { "lat": 33.44785, "lng": -112.07343 },
+      { "lat": 33.44762, "lng": -112.07539 },
+      { "lat": 33.44858, "lng": -112.07652 }
+    ],
+    "zones": [
+      { "id": "open-yard", "name": "Open Yard", "type": "open-yard", "center": { "lat": 33.44980, "lng": -112.07455 } },
+      { "id": "roof-area", "name": "Roof Area", "type": "roof", "center": { "lat": 33.44892, "lng": -112.07402 } },
+      { "id": "material-staging", "name": "Material Staging", "type": "staging", "center": { "lat": 33.44856, "lng": -112.07345 } }
+    ],
+    "status": "active"
+  },
+  "observedAt": "2026-08-22T11:28:00-07:00",
+  "isLive": true,
+  "conditions": {
+    "temperatureC": 38.4,
+    "humidityPercent": 43,
+    "heatIndexC": 42.0,
+    "feelsLikeC": 42.0,
+    "windKph": 14,
+    "windDirection": "WSW",
+    "weatherLabel": "Clear"
+  },
+  "deltas": {
+    "temperatureC": 2.6,
+    "humidityPercent": -5,
+    "heatIndexC": 3.1,
+    "comparedAt": "10:30 AM"
+  },
+  "risk": {
+    "level": "high",
+    "summary": "Extreme heat window expected from 12:30 PM to 3:45 PM.",
+    "detail": "Roof and open-yard tasks face elevated exposure.",
+    "peakWindowStart": "12:30 PM",
+    "peakWindowEnd": "3:45 PM"
+  },
+  "workers": [
+    {
+      "id": "w-1001", "name": "Miguel Hernandez", "initials": "MH", "role": "Foreman", "location": "Open Yard", "locationId": "open-yard", "status": "active", "risk": "high", "lastCheckIn": "11:26 AM", "coordinate": { "lat": 33.44998, "lng": -112.07424 }
+    },
+    {
+      "id": "w-1002", "name": "James Carter", "initials": "JC", "role": "Roofer", "location": "Roof Area", "locationId": "roof-area", "status": "active", "risk": "high", "lastCheckIn": "11:25 AM", "coordinate": { "lat": 33.44894, "lng": -112.07408 }
+    },
+    {
+      "id": "w-1003", "name": "Tariq Ahmed", "initials": "TA", "role": "Laborer", "location": "Material Staging", "locationId": "material-staging", "status": "active", "risk": "medium", "lastCheckIn": "11:24 AM", "coordinate": { "lat": 33.44845, "lng": -112.07368 }
+    },
+    {
+      "id": "w-1004", "name": "Luis Ramirez", "initials": "LR", "role": "Electrician", "location": "Open Yard", "locationId": "open-yard", "status": "break", "risk": "medium", "lastCheckIn": "11:22 AM", "coordinate": { "lat": 33.44866, "lng": -112.07525 }
+    },
+    {
+      "id": "w-1005", "name": "Carlos Ramirez", "initials": "CR", "role": "Roofer", "location": "Roof Area", "locationId": "roof-area", "status": "active", "risk": "high", "lastCheckIn": "11:20 AM", "coordinate": { "lat": 33.44914, "lng": -112.07350 }
+    },
+    {
+      "id": "w-1006", "name": "Alicia Torres", "initials": "AT", "role": "Safety Lead", "location": "Open Yard", "locationId": "open-yard", "status": "active", "risk": "low", "lastCheckIn": "11:19 AM", "coordinate": { "lat": 33.44920, "lng": -112.07530 }
+    },
+    {
+      "id": "w-1007", "name": "Noah Brooks", "initials": "NB", "role": "Operator", "location": "Material Staging", "locationId": "material-staging", "status": "active", "risk": "low", "lastCheckIn": "11:18 AM", "coordinate": { "lat": 33.44819, "lng": -112.07462 }
+    },
+    {
+      "id": "w-1008", "name": "Mason Lee", "initials": "ML", "role": "Laborer", "location": "Open Yard", "locationId": "open-yard", "status": "active", "risk": "low", "lastCheckIn": "11:17 AM", "coordinate": { "lat": 33.44951, "lng": -112.07552 }
+    }
+  ],
+  "highExposureCount": 3,
+  "forecast": [
+    { "time": "7 AM", "temperatureC": 32.0 },
+    { "time": "9 AM", "temperatureC": 36.0 },
+    { "time": "11 AM", "temperatureC": 38.4 },
+    { "time": "1 PM", "temperatureC": 40.7 },
+    { "time": "3 PM", "temperatureC": 41.2 },
+    { "time": "5 PM", "temperatureC": 38.8 },
+    { "time": "7 PM", "temperatureC": 36.4 }
+  ],
+  "hotspots": [
+    { "id": "hs-1", "level": "high", "x": 55, "y": 53, "radius": 58 },
+    { "id": "hs-2", "level": "medium", "x": 34, "y": 33, "radius": 34 },
+    { "id": "hs-3", "level": "high", "x": 75, "y": 40, "radius": 28 },
+    { "id": "hs-4", "level": "low", "x": 84, "y": 69, "radius": 18 }
+  ],
+  "nextAction": {
+    "title": "Start mandatory hydration reminder in 15 min",
+    "detail": "Based on rising heat index and forecast.",
+    "actionLabel": "Send Reminder",
+    "dueInMinutes": 15
+  }
+}
