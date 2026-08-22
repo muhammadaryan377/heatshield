@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 
 import httpx
@@ -145,6 +145,21 @@ class FortyGuardClient:
 
     @staticmethod
     def _point_in_ring(longitude: float, latitude: float, ring: list[list[Any]]) -> bool:
+        # Treat a point on a tile edge as contained. Heatmap tiles commonly share
+        # their boundaries, and the ray-casting test alone excludes some edges.
+        epsilon = 1e-10
+        for index, position in enumerate(ring):
+            previous = ring[index - 1]
+            if len(position) < 2 or len(previous) < 2:
+                return False
+            x1, y1 = previous[0], previous[1]
+            x2, y2 = position[0], position[1]
+            if not all(isinstance(value, (int, float)) for value in (x1, y1, x2, y2)):
+                return False
+            cross = (longitude - x1) * (y2 - y1) - (latitude - y1) * (x2 - x1)
+            if abs(cross) <= epsilon and min(x1, x2) - epsilon <= longitude <= max(x1, x2) + epsilon and min(y1, y2) - epsilon <= latitude <= max(y1, y2) + epsilon:
+                return True
+
         inside = False
         j = len(ring) - 1
         for i, position in enumerate(ring):
@@ -164,6 +179,36 @@ class FortyGuardClient:
         return inside
 
     @classmethod
+    def _geometry_contains_point(cls, geometry: dict[str, Any], longitude: float, latitude: float) -> bool:
+        coordinates = geometry.get('coordinates')
+        geometry_type = geometry.get('type')
+        if geometry_type == 'Polygon' and isinstance(coordinates, list) and coordinates:
+            outer_ring = coordinates[0]
+            return isinstance(outer_ring, list) and cls._point_in_ring(longitude, latitude, outer_ring)
+        if geometry_type == 'MultiPolygon' and isinstance(coordinates, list):
+            return any(
+                isinstance(polygon, list)
+                and bool(polygon)
+                and isinstance(polygon[0], list)
+                and cls._point_in_ring(longitude, latitude, polygon[0])
+                for polygon in coordinates
+            )
+        return False
+
+    @staticmethod
+    def _temperature_value(properties: dict[str, Any]) -> float | None:
+        value = properties.get('average_temperature', properties.get('temperature'))
+        if isinstance(value, (int, float)) and not isinstance(value, bool):
+            return float(value)
+        # Some FortyGuard responses serialize numeric properties as JSON strings.
+        if isinstance(value, str):
+            try:
+                return float(value)
+            except ValueError:
+                return None
+        return None
+
+    @classmethod
     def _extract_temperature(cls, result: dict[str, Any], site: Site) -> tuple[float, dict[str, Any]]:
         map_data = result.get('map_data')
         if not isinstance(map_data, dict):
@@ -171,6 +216,10 @@ class FortyGuardClient:
         features = map_data.get('features')
         if not isinstance(features, list):
             raise FortyGuardAPIError('FortyGuard heatmap contains no spatial features.')
+        if not features:
+            raise FortyGuardAPIError(
+                'FortyGuard completed the heatmap request but returned zero temperature tiles.'
+            )
 
         for feature in features:
             if not isinstance(feature, dict):
@@ -179,15 +228,11 @@ class FortyGuardClient:
             geometry = feature.get('geometry')
             if not isinstance(properties, dict) or not isinstance(geometry, dict):
                 continue
-            value = properties.get('average_temperature', properties.get('temperature'))
-            coordinates = geometry.get('coordinates')
-            if not isinstance(value, (int, float)) or isinstance(value, bool):
+            value = cls._temperature_value(properties)
+            if value is None:
                 continue
-            if geometry.get('type') != 'Polygon' or not isinstance(coordinates, list) or not coordinates:
-                continue
-            ring = coordinates[0]
-            if isinstance(ring, list) and cls._point_in_ring(site.center.lng, site.center.lat, ring):
-                return float(value), feature
+            if cls._geometry_contains_point(geometry, site.center.lng, site.center.lat):
+                return value, feature
 
         raise FortyGuardAPIError('No containing FortyGuard temperature tile was found for this site.')
 
@@ -217,7 +262,10 @@ class FortyGuardClient:
 
     async def fetch_observation(self, *, site: Site) -> FortyGuardObservation:
         _ = self.headers  # Validate configuration before any work is performed.
-        now = datetime.now().astimezone()
+        # FortyGuard heatmap hours are interpreted in UTC. Using the backend's
+        # local clock (for example Asia/Karachi) can request a future hour for a
+        # US site and yield a completed heatmap with zero cells.
+        now = datetime.now(timezone.utc)
         date_time = {
             'start_date': now.date().isoformat(),
             'start_time': now.strftime('%H:%M'),
