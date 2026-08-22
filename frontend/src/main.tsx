@@ -7,6 +7,7 @@ import './site-builder-v2.css'
 import './sidebar-collapse.css'
 import './add-worker-v2.css'
 import './plan.css'
+import './sites-reports.css'
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
