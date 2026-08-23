@@ -33,10 +33,25 @@ import type { Site, SiteIntelligence, Worker } from '../types/site'
 const STORAGE_KEY = 'heatshield:selected-site'
 
 function sourceLabel(data: SiteIntelligence | null) {
-  if (!data?.conditions) return 'Waiting for verified conditions'
-  if (data.conditionSource === 'fortyguard') return 'FortyGuard verified'
-  if (data.conditionSource === 'nws') return 'NWS live conditions'
-  return 'Verified conditions'
+  if (!data) return 'FortyGuard not checked'
+  if (data.conditionSource === 'fortyguard') {
+    return data.thermalStatus === 'verified' ? 'FortyGuard primary · current thermal' : 'FortyGuard primary · recent thermal'
+  }
+  if (data.conditionSource === 'nws') {
+    return data.thermalStatus === 'not_configured'
+      ? 'FortyGuard not configured · NWS fallback'
+      : 'FortyGuard thermal pending · NWS atmosphere'
+  }
+  if (data.thermalStatus === 'not_configured') return 'FortyGuard not configured'
+  return 'FortyGuard thermal pending'
+}
+
+function thermalLabel(data: SiteIntelligence | null) {
+  if (!data) return 'Not checked'
+  if (data.thermalStatus === 'verified') return 'Current cells verified'
+  if (data.thermalStatus === 'recent_verified') return 'Recent cells verified'
+  if (data.thermalStatus === 'not_configured') return 'API key not configured'
+  return 'Current cells unavailable'
 }
 
 function riskLabel(data: SiteIntelligence | null) {
@@ -63,7 +78,7 @@ function readiness(site: Site, workers: Worker[], intelligence: SiteIntelligence
   return [
     { label: 'Site boundary', ready: site.polygon.length >= 3, detail: `${site.polygon.length} saved corners` },
     { label: 'Workers', ready: workers.some((worker) => worker.status !== 'offsite'), detail: `${workers.filter((worker) => worker.status !== 'offsite').length} active` },
-    { label: 'Heat evidence', ready: intelligence?.thermalStatus === 'verified' || intelligence?.thermalStatus === 'recent_verified', detail: intelligence?.thermalStatus?.replace('_', ' ') ?? 'not checked' },
+    { label: 'FortyGuard thermal', ready: intelligence?.thermalStatus === 'verified' || intelligence?.thermalStatus === 'recent_verified', detail: thermalLabel(intelligence) },
     { label: 'Operational zones', ready: approved.length > 0, detail: `${approved.length} approved` },
     { label: 'Recovery area', ready: recovery.length > 0 || site.profile.recoveryAreas > 0, detail: recovery.length ? `${recovery.length} mapped` : `${site.profile.recoveryAreas} profile count` },
   ]
@@ -178,17 +193,17 @@ export function SitesPage() {
         onSiteChange={selectSite}
         onCreateSite={() => setCreateOpen(true)}
         pageTitle="Sites"
-        pageSubtitle="Build the operational truth for every worksite: boundaries, workers, heat evidence, zones and site readiness."
+        pageSubtitle="Build the operational truth for every worksite around FortyGuard thermal evidence, real boundaries, workers and approved zones."
       />
 
       <div className="sites-page sites-command-page">
         {loadingSites ? <StatePanel kind="loading" title="Loading sites" detail="Reading saved work areas and worker assignments…" /> : !sites.length ? (
-          <section className="sites-empty panel"><MapPin size={30}/><div><h2>No work sites yet</h2><p>Create a site, draw its real boundary with map dots, then add workers and polygon operational zones.</p></div><button className="button button--primary" onClick={() => setCreateOpen(true)}><Plus size={17}/> Create Site</button></section>
+          <section className="sites-empty panel"><MapPin size={30}/><div><h2>No work sites yet</h2><p>Create a site, draw its real boundary with map dots, then add workers and polygon operational zones. FortyGuard analysis will use that saved polygon as its area of interest.</p></div><button className="button button--primary" onClick={() => setCreateOpen(true)}><Plus size={17}/> Create Site</button></section>
         ) : <>
           {selectedSite && <section className="site-identity panel">
             <div className="site-identity__main">
               <span className={`site-identity__status site-identity__status--${selectedSite.status}`}>{selectedSite.status}</span>
-              <div><span className="sites-eyebrow">SITE OPERATIONS COMMAND CENTER</span><h2>{selectedSite.name}</h2><p>{selectedSite.address}</p></div>
+              <div><span className="sites-eyebrow">SITE OPERATIONS COMMAND CENTER · FORTYGUARD CORE</span><h2>{selectedSite.name}</h2><p>{selectedSite.address}</p></div>
             </div>
             <div className="site-identity__facts">
               <span><UsersRound size={15}/> {selectedWorkers.filter((worker) => worker.status !== 'offsite').length} active workers</span>
@@ -221,7 +236,7 @@ export function SitesPage() {
             </aside>
 
             <main className="site-command-main">
-              {loadingSelected && !intelligence ? <StatePanel kind="loading" title="Loading selected site" detail="Requesting the current site snapshot…" /> : selectedSite ? <>
+              {loadingSelected && !intelligence ? <StatePanel kind="loading" title="Loading selected site" detail="Requesting FortyGuard thermal evidence and the current atmospheric context…" /> : selectedSite ? <>
                 <SiteCommandMap site={selectedSite} workers={selectedWorkers} />
 
                 <section className="site-readiness panel">
@@ -246,15 +261,16 @@ export function SitesPage() {
                   </section>
 
                   <aside className="site-intelligence-rail panel">
-                    <div><span className="sites-eyebrow">SITE INTELLIGENCE</span><h2>Current operating picture</h2></div>
-                    <article><Flame size={18}/><div><span>Current risk</span><strong className={`sites-risk-value--${intelligence?.risk?.level ?? 'pending'}`}>{riskLabel(intelligence)}</strong><small>{intelligence?.risk?.summary ?? 'Waiting for verified conditions'}</small></div></article>
+                    <div><span className="sites-eyebrow">FORTYGUARD + OPERATIONS</span><h2>Current operating picture</h2></div>
+                    <article><Activity size={18}/><div><span>FortyGuard thermal</span><strong>{thermalLabel(intelligence)}</strong><small>{intelligence?.thermalMessage ?? 'FortyGuard is the primary source for spatial heat. Use the map heat layer or completed-day profile when current cells are empty.'}</small></div></article>
+                    <article><Flame size={18}/><div><span>Current risk</span><strong className={`sites-risk-value--${intelligence?.risk?.level ?? 'pending'}`}>{riskLabel(intelligence)}</strong><small>{intelligence?.risk?.summary ?? 'Waiting for verified atmospheric conditions'}</small></div></article>
                     <article><SunMedium size={18}/><div><span>Heat index</span><strong>{intelligence?.conditions ? `${intelligence.conditions.heatIndexC.toFixed(1)}°C` : '—'}</strong><small>{sourceLabel(intelligence)}</small></div></article>
                     <article><UsersRound size={18}/><div><span>Worker exposure</span><strong>{directSunWorkers} direct sun</strong><small>{intelligence?.highExposureCount ?? 0} high exposure workers</small></div></article>
                     <article><Droplets size={18}/><div><span>Recovery readiness</span><strong>{selectedSite.zones.filter((zone) => zone.type === 'recovery' && zone.operationalApproved).length} mapped recovery zones</strong><small>{selectedSite.profile.waterStations} water stations in site profile</small></div></article>
                     <div className="site-intelligence-actions">
                       <button className="button button--primary" onClick={() => navigate(`/plan?site=${encodeURIComponent(selectedSite.id)}`)}><ClipboardList size={16}/> Generate Plan</button>
                       <button className="button button--secondary" onClick={() => navigate(`/workers/new?site=${encodeURIComponent(selectedSite.id)}`)}><UserPlus size={16}/> Add Worker</button>
-                      <button className="button button--history" onClick={() => navigate(`/heat-history?site=${encodeURIComponent(selectedSite.id)}`)}><History size={16}/> Heat History</button>
+                      <button className="button button--history" onClick={() => navigate(`/heat-history?site=${encodeURIComponent(selectedSite.id)}`)}><History size={16}/> FortyGuard History</button>
                     </div>
                   </aside>
                 </div>
