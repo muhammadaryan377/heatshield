@@ -23,7 +23,6 @@ interface CreateSiteModalProps {
 type SearchAnchor = {
   coordinate: Coordinate
   formattedAddress: string
-  strict: boolean
 }
 
 const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY ?? ''
@@ -54,8 +53,13 @@ function isUnitedStatesResult(result: google.maps.GeocoderResult) {
   return result.address_components.some((component) => component.types.includes('country') && component.short_name === 'US')
 }
 
-function isSpecificSearch(result: google.maps.GeocoderResult) {
-  return !result.types.includes('administrative_area_level_1') && !result.types.includes('country')
+function isSpecificWorkLocation(result: google.maps.GeocoderResult) {
+  const acceptedTypes = new Set([
+    'street_address', 'premise', 'subpremise', 'postal_code', 'locality',
+    'sublocality', 'sublocality_level_1', 'neighborhood', 'point_of_interest',
+    'establishment', 'route',
+  ])
+  return result.types.some((type) => acceptedTypes.has(type))
 }
 
 export function CreateSiteModal({ open, onClose, onCreated }: CreateSiteModalProps) {
@@ -72,7 +76,7 @@ export function CreateSiteModal({ open, onClose, onCreated }: CreateSiteModalPro
   const [address, setAddress] = useState('')
   const [points, setPoints] = useState<Coordinate[]>([])
   const [searchAnchor, setSearchAnchor] = useState<SearchAnchor | null>(null)
-  const [mapMessage, setMapMessage] = useState<string | null>('Search and confirm a USA location before drawing the work-site boundary.')
+  const [mapMessage, setMapMessage] = useState<string | null>('Search and confirm a specific USA location before drawing the work-site boundary.')
   const [searching, setSearching] = useState(false)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -111,13 +115,13 @@ export function CreateSiteModal({ open, onClose, onCreated }: CreateSiteModalPro
           if (!event.latLng) return
           const anchor = searchAnchorRef.current
           if (!anchor) {
-            setError('Search and confirm a USA city, ZIP code, address, or place before drawing the site.')
-            setMapMessage('Boundary drawing is locked until a USA location is confirmed.')
+            setError('Search and confirm a specific USA city, ZIP code, address, or place before drawing the site.')
+            setMapMessage('Boundary drawing is locked until a specific USA location is confirmed.')
             return
           }
 
           const next = { lat: event.latLng.lat(), lng: event.latLng.lng() }
-          if (anchor.strict && distanceKm(anchor.coordinate, next) > MAX_DISTANCE_FROM_CONFIRMED_LOCATION_KM) {
+          if (distanceKm(anchor.coordinate, next) > MAX_DISTANCE_FROM_CONFIRMED_LOCATION_KM) {
             setError(`That point is too far from ${anchor.formattedAddress}. Search the correct USA location first.`)
             setMapMessage('The boundary must stay near the confirmed work location.')
             return
@@ -196,7 +200,7 @@ export function CreateSiteModal({ open, onClose, onCreated }: CreateSiteModalPro
     setPoints([])
     clearConfirmedLocation()
     setError(null)
-    setMapMessage('Search and confirm a USA location before drawing the work-site boundary.')
+    setMapMessage('Search and confirm a specific USA location before drawing the work-site boundary.')
     setSearching(false)
   }
 
@@ -231,12 +235,18 @@ export function CreateSiteModal({ open, onClose, onCreated }: CreateSiteModalPro
         setMapMessage('Search a US city, ZIP code, address, or place name.')
         return
       }
+      if (!isSpecificWorkLocation(result)) {
+        clearConfirmedLocation()
+        setPoints([])
+        setError('Choose a specific US city, ZIP code, street address, or place. A state/country-only result is too broad for a FortyGuard site AOI.')
+        setMapMessage('Use a city, ZIP code, street address, or named place before drawing the work area.')
+        return
+      }
 
       const location = result.geometry.location
       const anchor: SearchAnchor = {
         coordinate: { lat: location.lat(), lng: location.lng() },
         formattedAddress: result.formatted_address,
-        strict: isSpecificSearch(result),
       }
       searchAnchorRef.current = anchor
       setSearchAnchor(anchor)
@@ -258,7 +268,7 @@ export function CreateSiteModal({ open, onClose, onCreated }: CreateSiteModalPro
         title: result.formatted_address,
       })
 
-      setMapMessage(`USA location confirmed: ${result.formatted_address}. Now click the actual work-area corners.`)
+      setMapMessage(`USA location confirmed: ${result.formattedAddress ?? result.formatted_address}. Now click the actual work-area corners.`)
     })
   }
 
@@ -305,7 +315,7 @@ export function CreateSiteModal({ open, onClose, onCreated }: CreateSiteModalPro
       return
     }
 
-    if (searchAnchor?.strict && distanceKm(searchAnchor.coordinate, center) > MAX_DISTANCE_FROM_CONFIRMED_LOCATION_KM) {
+    if (searchAnchor && distanceKm(searchAnchor.coordinate, center) > MAX_DISTANCE_FROM_CONFIRMED_LOCATION_KM) {
       setError(`The saved boundary center is too far from ${searchAnchor.formattedAddress}. Search the correct location and redraw the boundary.`)
       return
     }
@@ -335,7 +345,7 @@ export function CreateSiteModal({ open, onClose, onCreated }: CreateSiteModalPro
   const missingLabel = !hasName
     ? 'Add a site name to continue'
     : !hasConfirmedLocation
-      ? 'Search and confirm a USA location'
+      ? 'Search and confirm a specific USA location'
       : !hasBoundary
         ? `Select ${Math.max(0, 3 - points.length)} more boundary point${3 - points.length === 1 ? '' : 's'}`
         : 'Ready to save'
@@ -347,7 +357,7 @@ export function CreateSiteModal({ open, onClose, onCreated }: CreateSiteModalPro
           <div>
             <span className="eyebrow">USA SITE SETUP</span>
             <h2 id="create-site-title">Create a FortyGuard work site</h2>
-            <p>Your physical location does not matter. Search the US work location, confirm it, then draw the real site polygon.</p>
+            <p>Your physical location does not matter. Search a specific US work location, confirm it, then draw the real site polygon.</p>
           </div>
           <button type="button" className="icon-button" onClick={close} aria-label="Close site builder" disabled={saving}><X size={20} /></button>
         </div>
@@ -376,11 +386,11 @@ export function CreateSiteModal({ open, onClose, onCreated }: CreateSiteModalPro
                     <button type="button" onClick={findAddress} aria-label="Find address" disabled={!address.trim() || searching}>{searching ? <LoaderCircle className="spin" size={18} /> : <Search size={18} />}</button>
                   </div>
                 </label>
-                {searchAnchor && <div className="site-ready-summary"><CheckCircle2 size={20}/><div><strong>United States location confirmed</strong><span>{searchAnchor.formattedAddress} · {searchAnchor.coordinate.lat.toFixed(5)}, {searchAnchor.coordinate.lng.toFixed(5)}</span></div></div>}
+                {searchAnchor && <div className="site-ready-summary"><CheckCircle2 size={20}/><div><strong>Specific United States location confirmed</strong><span>{searchAnchor.formattedAddress} · {searchAnchor.coordinate.lat.toFixed(5)}, {searchAnchor.coordinate.lng.toFixed(5)}</span></div></div>}
               </div>
 
               <div className="site-builder-section">
-                <div className="site-builder-section__heading"><span>3</span><div><strong>Draw the exact work area</strong><small>Drawing unlocks only after the US location is confirmed. A new search clears old points automatically.</small></div></div>
+                <div className="site-builder-section__heading"><span>3</span><div><strong>Draw the exact work area</strong><small>Drawing unlocks only after a specific US location is confirmed. A new search clears old points automatically.</small></div></div>
                 <div className={`boundary-status${hasBoundary ? ' boundary-status--ready' : ''}`}>
                   <div className="boundary-status__icon">{hasBoundary ? <CheckCircle2 size={21} /> : <MousePointer2 size={20} />}</div>
                   <div><strong>{hasBoundary ? 'Boundary ready' : hasConfirmedLocation ? 'Select boundary corners' : 'Confirm location first'}</strong><span>{points.length} point{points.length === 1 ? '' : 's'} selected · {hasBoundary ? 'site area is ready to save' : 'minimum 3 required'}</span></div>
@@ -396,7 +406,7 @@ export function CreateSiteModal({ open, onClose, onCreated }: CreateSiteModalPro
 
               <details className="site-builder-help">
                 <summary>Why this is locked to the USA</summary>
-                <ol><li>Your computer can be anywhere, including Pakistan.</li><li>The searched US location controls where the map jumps.</li><li>The drawn polygon controls the exact FortyGuard AOI and site timezone.</li><li>Changing the search clears the old polygon so a Miami site cannot accidentally keep another Florida location.</li></ol>
+                <ol><li>Your computer can be anywhere, including Pakistan.</li><li>The confirmed US city/ZIP/address controls where the map jumps.</li><li>The drawn polygon controls the exact FortyGuard AOI and site timezone.</li><li>Every boundary point must stay within 80 km of the confirmed work location.</li><li>Changing the search clears the old polygon so a Miami site cannot accidentally keep another location.</li></ol>
               </details>
 
               {error && <div className="form-error">{error}</div>}
@@ -412,7 +422,7 @@ export function CreateSiteModal({ open, onClose, onCreated }: CreateSiteModalPro
           <div className="site-builder-map-wrap">
             {apiKey ? <div ref={mapElement} className="site-builder-map" /> : <div className="site-builder-map-missing"><MapPin size={28}/><strong>Google Maps key required</strong><p>Add `VITE_GOOGLE_MAPS_API_KEY` to the frontend environment to draw real US site areas.</p></div>}
             {apiKey && <div className="site-builder-map-search" role="search"><Search size={18}/><input value={address} onChange={(event) => changeAddress(event.target.value)} onKeyDown={addressKeyDown} aria-label="Search USA map" placeholder="Search Miami, FL, ZIP, US address…"/><button type="button" onClick={findAddress} disabled={!address.trim() || searching}>{searching ? <LoaderCircle className="spin" size={17}/> : 'Confirm US location'}</button></div>}
-            <div className="site-builder-map-tip"><MousePointer2 size={15}/>{hasBoundary ? `${points.length} numbered dots selected · FortyGuard AOI ready` : hasConfirmedLocation ? 'US location confirmed · click actual site corners' : 'Search and confirm a US location before drawing'}</div>
+            <div className="site-builder-map-tip"><MousePointer2 size={15}/>{hasBoundary ? `${points.length} numbered dots selected · FortyGuard AOI ready` : hasConfirmedLocation ? 'Specific US location confirmed · click actual site corners' : 'Search and confirm a specific US location before drawing'}</div>
             {mapMessage && <div className="site-builder-map-message">{mapMessage}</div>}
           </div>
         </form>
