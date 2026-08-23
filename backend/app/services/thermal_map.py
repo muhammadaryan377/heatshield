@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from hashlib import sha1
 from typing import Any
 
@@ -149,6 +149,12 @@ class ThermalMapService:
 
     NWS is intentionally not used here: it can provide site-level atmospheric
     conditions, but it cannot replace FortyGuard's spatial thermal cells.
+
+    FortyGuard can sometimes complete the newest hour without populated tiles.
+    We first try the current/recent local hours. If those are empty, the map may
+    fall back to the same local hour 1-3 days earlier so the Sites workspace can
+    still show real FortyGuard spatial evidence. Historical anchors are labelled
+    explicitly and are never presented as live conditions.
     """
 
     def __init__(self, settings: Settings):
@@ -170,6 +176,18 @@ class ThermalMapService:
     def _store_cache(self, key: str, now: datetime, response: ThermalMapResponse) -> None:
         if self.settings.fortyguard_cache_ttl_seconds > 0:
             _THERMAL_CACHE[key] = (now, response)
+
+    def _thermal_candidates(self, site, now: datetime) -> tuple[str, datetime, list[datetime]]:
+        timezone_name, recent = self.fortyguard._candidate_local_hours(site, now)
+        _, site_timezone = self.fortyguard._site_timezone(site)
+        local_hour = now.astimezone(site_timezone).replace(minute=0, second=0, microsecond=0)
+
+        candidates = list(recent)
+        for day_offset in (1, 2, 3):
+            anchor = local_hour - timedelta(days=day_offset)
+            if anchor not in candidates:
+                candidates.append(anchor)
+        return timezone_name, local_hour, candidates
 
     async def generate(self, site_id: str, request: ThermalMapRequest) -> ThermalMapResponse:
         site = self.store.get_site(site_id)
@@ -198,7 +216,7 @@ class ThermalMapService:
             self._store_cache(key, now, response)
             return response
 
-        timezone_name, candidates = self.fortyguard._candidate_local_hours(site, now)
+        timezone_name, local_hour, candidates = self._thermal_candidates(site, now)
         polygon_aoi = _geojson_polygon(points)
         attempted = 0
 
@@ -222,6 +240,25 @@ class ThermalMapService:
                 temperatures = [tile.temperatureC for tile in tiles]
                 hottest = max(tiles, key=lambda tile: tile.temperatureC)
                 coolest = min(tiles, key=lambda tile: tile.temperatureC)
+                age_hours = max(0, round((local_hour - candidate).total_seconds() / 3600))
+                if age_hours == 0:
+                    message = (
+                        f'Verified FortyGuard current-hour spatial temperature cells · activity {activity_id}. '
+                        'Click a cell to inspect its temperature.'
+                    )
+                elif age_hours <= max(1, self.settings.fortyguard_recent_hour_fallbacks):
+                    message = (
+                        f'Current hour had no cells; using verified FortyGuard spatial evidence from {age_hours} hour(s) earlier '
+                        f'· activity {activity_id}.'
+                    )
+                else:
+                    days = max(1, round(age_hours / 24))
+                    message = (
+                        f'Current/recent FortyGuard tiles were empty. Showing a verified FortyGuard historical anchor from '
+                        f'{days} day(s) earlier at the same local hour · activity {activity_id}. '
+                        'This is spatial baseline evidence, not a live condition.'
+                    )
+
                 response = ThermalMapResponse(
                     siteId=site.id,
                     mode=request.mode,
@@ -236,11 +273,7 @@ class ThermalMapService:
                     hottestTileId=hottest.id,
                     coolestTileId=coolest.id,
                     tiles=tiles,
-                    message=(
-                        'Verified FortyGuard spatial temperature cells. Click a cell to inspect its temperature.'
-                        if attempted == 1
-                        else f'Current hour had no cells; using the latest verified FortyGuard layer from {attempted - 1} hour(s) earlier.'
-                    ),
+                    message=message,
                 )
                 self._store_cache(key, now, response)
                 return response
@@ -263,8 +296,8 @@ class ThermalMapService:
             timezoneName=timezone_name,
             granularityMeters=request.granularityMeters,
             message=(
-                f'FortyGuard returned no usable temperature cells for {attempted} recent '
-                f'{timezone_name} whole-hour request(s). No synthetic heatmap is shown.'
+                f'FortyGuard returned no usable temperature cells after {attempted} provider-backed attempts '
+                f'(current/recent hours plus 1-3 day historical anchors in {timezone_name}). No synthetic heatmap is shown.'
             ),
         )
         self._store_cache(key, now, response)
