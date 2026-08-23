@@ -82,20 +82,23 @@ def summarize_heatmap_result(result: dict[str, Any], analytic_type: str) -> dict
 
     values: list[float] = []
     peak_values: list[float] = []
+    min_values: list[float] = []
     if analytic_type == "tcm":
-        # FortyGuard single-day TCM separates average_temperature from
-        # max_temperature. Keep those semantics distinct in the probe report.
-        candidate_keys = ("average_temperature", "temperature", "value")
         for feature in features:
             if not isinstance(feature, dict):
                 continue
             props = feature.get("properties") if isinstance(feature.get("properties"), dict) else {}
-            value = next((number(props.get(key)) for key in candidate_keys if number(props.get(key)) is not None), None)
-            if value is not None:
-                values.append(value)
+            average = number(props.get("average_temperature"))
+            if average is None:
+                average = number(props.get("temperature"))
             peak = number(props.get("max_temperature"))
+            minimum = number(props.get("min_temperature"))
+            if average is not None:
+                values.append(average)
             if peak is not None:
                 peak_values.append(peak)
+            if minimum is not None:
+                min_values.append(minimum)
     else:
         for feature in features:
             if not isinstance(feature, dict):
@@ -119,10 +122,14 @@ def summarize_heatmap_result(result: dict[str, Any], analytic_type: str) -> dict
         summary["value_min"] = min(values)
         summary["value_mean"] = sum(values) / len(values)
         summary["value_max"] = max(values)
-    if peak_values:
+    if analytic_type == "tcm" and peak_values:
         summary["peak_temperature_min"] = min(peak_values)
         summary["peak_temperature_mean"] = sum(peak_values) / len(peak_values)
         summary["peak_temperature_max"] = max(peak_values)
+    if analytic_type == "tcm" and min_values:
+        summary["minimum_temperature_min"] = min(min_values)
+        summary["minimum_temperature_mean"] = sum(min_values) / len(min_values)
+        summary["minimum_temperature_max"] = max(min_values)
     return summary
 
 
@@ -303,10 +310,6 @@ async def run(include_live: bool, full: bool) -> None:
                 )
             )
 
-        # Explicit compatibility test. The Create Heatmap documentation supports
-        # filter_type=4 for a range of days, while the separate limitations page
-        # currently lags behind. The live provider result is the source of truth
-        # for this HeatShield account/release.
         report["tests"].append(
             await probe.heatmap(
                 name="phoenix_az_range_days_filter4_compatibility",
