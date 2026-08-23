@@ -43,6 +43,8 @@ export function EditSiteModal({ open, site, onClose, onUpdated }: Props) {
   const polygonRef = useRef<google.maps.Polygon | null>(null)
   const markersRef = useRef<google.maps.Marker[]>([])
   const listenerRef = useRef<google.maps.MapsEventListener | null>(null)
+  const drawingRef = useRef(false)
+  const [mapReady, setMapReady] = useState(false)
   const [name, setName] = useState('')
   const [address, setAddress] = useState('')
   const [status, setStatus] = useState<'active' | 'inactive'>('active')
@@ -51,6 +53,11 @@ export function EditSiteModal({ open, site, onClose, onUpdated }: Props) {
   const [drawing, setDrawing] = useState(false)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    drawingRef.current = drawing
+    mapRef.current?.setOptions({ draggableCursor: drawing ? 'crosshair' : null })
+  }, [drawing])
 
   useEffect(() => {
     if (!site || !open) return
@@ -68,6 +75,7 @@ export function EditSiteModal({ open, site, onClose, onUpdated }: Props) {
   useEffect(() => {
     if (!open || !site || !apiKey || !mapNode.current) return
     let cancelled = false
+    setMapReady(false)
     loadGoogleMaps(apiKey).then((googleInstance) => {
       if (cancelled || !mapNode.current) return
       const map = new googleInstance.maps.Map(mapNode.current, {
@@ -84,12 +92,15 @@ export function EditSiteModal({ open, site, onClose, onUpdated }: Props) {
       site.polygon.forEach((point) => bounds.extend(point))
       if (!bounds.isEmpty()) map.fitBounds(bounds, 48)
       listenerRef.current = map.addListener('click', (event: google.maps.MapMouseEvent) => {
-        if (!drawing || !event.latLng) return
-        setPoints((current) => current.length >= 80 ? current : [...current, { lat: event.latLng!.lat(), lng: event.latLng!.lng() }])
+        if (!drawingRef.current || !event.latLng) return
+        const next = { lat: event.latLng.lat(), lng: event.latLng.lng() }
+        setPoints((current) => current.length >= 80 ? current : [...current, next])
       })
+      setMapReady(true)
     }).catch((err: Error) => setError(err.message))
     return () => {
       cancelled = true
+      setMapReady(false)
       listenerRef.current?.remove()
       listenerRef.current = null
       polygonRef.current?.setMap(null)
@@ -97,13 +108,13 @@ export function EditSiteModal({ open, site, onClose, onUpdated }: Props) {
       markersRef.current = []
       mapRef.current = null
     }
-  }, [drawing, open, site])
+  }, [open, site?.id])
 
   useEffect(() => {
     polygonRef.current?.setMap(null)
     markersRef.current.forEach((marker) => marker.setMap(null))
     markersRef.current = []
-    if (!mapRef.current || !window.google?.maps || !points.length) return
+    if (!mapReady || !mapRef.current || !window.google?.maps || !points.length) return
     polygonRef.current = new google.maps.Polygon({
       map: mapRef.current,
       paths: points,
@@ -126,7 +137,7 @@ export function EditSiteModal({ open, site, onClose, onUpdated }: Props) {
         strokeColor: '#ffffff', strokeWeight: 2, scale: 9,
       },
     }))
-  }, [points])
+  }, [mapReady, points])
 
   if (!open || !site || !profile) return null
 
@@ -198,7 +209,7 @@ export function EditSiteModal({ open, site, onClose, onUpdated }: Props) {
             <button type="button" onClick={() => setDrawing((value) => !value)} className={drawing ? 'active' : ''}><MapPin size={15}/> {drawing ? 'Drawing on' : 'Draw points'}</button>
           </div>
           {apiKey ? <div ref={mapNode} className="site-edit-map" /> : <div className="site-edit-map-empty"><MapPin size={26}/><strong>Google Maps key required</strong></div>}
-          <div className="site-edit-map-note"><Check size={15}/> Every click is shown as a numbered dot. HeatShield closes the boundary automatically.</div>
+          <div className="site-edit-map-note"><Check size={15}/> Every drawing click is shown as a numbered dot. HeatShield closes the boundary automatically.</div>
         </div>
         <footer className="site-edit-actions"><button type="button" className="button" onClick={onClose} disabled={saving}>Cancel</button><button type="submit" className="button button--primary" disabled={saving || points.length < 3}>{saving ? <LoaderCircle className="spin" size={17}/> : <Save size={17}/>} {saving ? 'Saving…' : 'Save Site Changes'}</button></footer>
       </form>
