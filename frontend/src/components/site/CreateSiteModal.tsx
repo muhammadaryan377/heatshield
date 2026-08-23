@@ -36,8 +36,10 @@ export function CreateSiteModal({ open, onClose, onCreated }: CreateSiteModalPro
   const mapElement = useRef<HTMLDivElement>(null)
   const mapRef = useRef<google.maps.Map | null>(null)
   const polygonRef = useRef<google.maps.Polygon | null>(null)
+  const pointMarkersRef = useRef<google.maps.Marker[]>([])
   const locationMarkerRef = useRef<google.maps.Marker | null>(null)
   const clickListenerRef = useRef<google.maps.MapsEventListener | null>(null)
+  const [mapReady, setMapReady] = useState(false)
 
   const [name, setName] = useState('')
   const [address, setAddress] = useState('')
@@ -76,11 +78,12 @@ export function CreateSiteModal({ open, onClose, onCreated }: CreateSiteModalPro
           gestureHandling: 'greedy',
         })
         mapRef.current = map
+        setMapReady(true)
 
         clickListenerRef.current = map.addListener('click', (event: google.maps.MapMouseEvent) => {
           if (!event.latLng) return
           const next = { lat: event.latLng.lat(), lng: event.latLng.lng() }
-          setPoints((current) => [...current, next])
+          setPoints((current) => current.length >= 80 ? current : [...current, next])
           setMapMessage(null)
         })
       })
@@ -88,10 +91,13 @@ export function CreateSiteModal({ open, onClose, onCreated }: CreateSiteModalPro
 
     return () => {
       cancelled = true
+      setMapReady(false)
       clickListenerRef.current?.remove()
       clickListenerRef.current = null
       polygonRef.current?.setMap(null)
       polygonRef.current = null
+      pointMarkersRef.current.forEach((marker) => marker.setMap(null))
+      pointMarkersRef.current = []
       locationMarkerRef.current?.setMap(null)
       locationMarkerRef.current = null
       mapRef.current = null
@@ -100,10 +106,12 @@ export function CreateSiteModal({ open, onClose, onCreated }: CreateSiteModalPro
 
   useEffect(() => {
     const map = mapRef.current
-    if (!map || !window.google?.maps) return
+    if (!mapReady || !map || !window.google?.maps) return
 
     polygonRef.current?.setMap(null)
     polygonRef.current = null
+    pointMarkersRef.current.forEach((marker) => marker.setMap(null))
+    pointMarkersRef.current = []
     if (!points.length) return
 
     polygonRef.current = new window.google.maps.Polygon({
@@ -113,10 +121,31 @@ export function CreateSiteModal({ open, onClose, onCreated }: CreateSiteModalPro
       strokeOpacity: 1,
       strokeWeight: 3,
       fillColor: '#0b8b87',
-      fillOpacity: 0.3,
+      fillOpacity: points.length >= 3 ? 0.3 : 0,
       clickable: false,
     })
-  }, [points])
+
+    pointMarkersRef.current = points.map((point, index) => new window.google.maps.Marker({
+      map,
+      position: point,
+      zIndex: 40,
+      title: `Site boundary point ${index + 1}`,
+      label: {
+        text: String(index + 1),
+        color: '#ffffff',
+        fontSize: '10px',
+        fontWeight: '700',
+      },
+      icon: {
+        path: window.google.maps.SymbolPath.CIRCLE,
+        fillColor: '#0b8b87',
+        fillOpacity: 1,
+        strokeColor: '#ffffff',
+        strokeWeight: 2.5,
+        scale: 9,
+      },
+    }))
+  }, [mapReady, points])
 
   const reset = () => {
     setName('')
@@ -169,7 +198,7 @@ export function CreateSiteModal({ open, onClose, onCreated }: CreateSiteModalPro
         title: result.formatted_address,
       })
 
-      setMapMessage('Location found. Click around the actual work-area corners to define the site.')
+      setMapMessage('Location found. Click around the actual work-area corners; every click appears as a numbered dot.')
     })
   }
 
@@ -241,7 +270,7 @@ export function CreateSiteModal({ open, onClose, onCreated }: CreateSiteModalPro
           <div>
             <span className="eyebrow">SITE SETUP</span>
             <h2 id="create-site-title">Create a work site</h2>
-            <p>Search the USA, draw the complete work area, then save it to HeatShield.</p>
+            <p>Search the USA, draw the complete work area with visible map dots, then save it to HeatShield.</p>
           </div>
           <button type="button" className="icon-button" onClick={close} aria-label="Close site builder" disabled={saving}><X size={20} /></button>
         </div>
@@ -263,12 +292,7 @@ export function CreateSiteModal({ open, onClose, onCreated }: CreateSiteModalPro
                 </div>
                 <label>
                   <span>Site name</span>
-                  <input
-                    value={name}
-                    onChange={(event) => { setName(event.target.value); setError(null) }}
-                    placeholder="e.g. Downtown Tower Project"
-                    autoFocus
-                  />
+                  <input value={name} onChange={(event) => { setName(event.target.value); setError(null) }} placeholder="e.g. Downtown Tower Project" autoFocus />
                 </label>
               </div>
 
@@ -280,15 +304,8 @@ export function CreateSiteModal({ open, onClose, onCreated }: CreateSiteModalPro
                 <label>
                   <span>Address / location</span>
                   <div className="field-with-action">
-                    <input
-                      value={address}
-                      onChange={(event) => setAddress(event.target.value)}
-                      onKeyDown={addressKeyDown}
-                      placeholder="e.g. Phoenix AZ, 85004, or street address"
-                    />
-                    <button type="button" onClick={findAddress} aria-label="Find address" disabled={!address.trim() || searching}>
-                      {searching ? <LoaderCircle className="spin" size={18} /> : <Search size={18} />}
-                    </button>
+                    <input value={address} onChange={(event) => setAddress(event.target.value)} onKeyDown={addressKeyDown} placeholder="e.g. Phoenix AZ, 85004, or street address" />
+                    <button type="button" onClick={findAddress} aria-label="Find address" disabled={!address.trim() || searching}>{searching ? <LoaderCircle className="spin" size={18} /> : <Search size={18} />}</button>
                   </div>
                 </label>
               </div>
@@ -296,15 +313,12 @@ export function CreateSiteModal({ open, onClose, onCreated }: CreateSiteModalPro
               <div className="site-builder-section">
                 <div className="site-builder-section__heading">
                   <span>3</span>
-                  <div><strong>Draw the work area</strong><small>Click each outer corner. HeatShield closes the polygon automatically.</small></div>
+                  <div><strong>Draw the work area</strong><small>Click each outer corner. Every click becomes a numbered dot and HeatShield closes the polygon automatically.</small></div>
                 </div>
 
                 <div className={`boundary-status${hasBoundary ? ' boundary-status--ready' : ''}`}>
                   <div className="boundary-status__icon">{hasBoundary ? <CheckCircle2 size={21} /> : <MousePointer2 size={20} />}</div>
-                  <div>
-                    <strong>{hasBoundary ? 'Boundary ready' : 'Select boundary corners'}</strong>
-                    <span>{points.length} point{points.length === 1 ? '' : 's'} selected · {hasBoundary ? 'site area is ready to save' : 'minimum 3 required'}</span>
-                  </div>
+                  <div><strong>{hasBoundary ? 'Boundary ready' : 'Select boundary corners'}</strong><span>{points.length} point{points.length === 1 ? '' : 's'} selected · {hasBoundary ? 'site area is ready to save' : 'minimum 3 required'}</span></div>
                 </div>
 
                 <div className="site-builder-tools">
@@ -314,71 +328,29 @@ export function CreateSiteModal({ open, onClose, onCreated }: CreateSiteModalPro
                 </div>
               </div>
 
-              {hasBoundary && (
-                <div className="site-ready-summary">
-                  <CheckCircle2 size={20} />
-                  <div>
-                    <strong>Site is ready</strong>
-                    <span>{points.length} boundary points · center {center.lat.toFixed(5)}, {center.lng.toFixed(5)}</span>
-                  </div>
-                </div>
-              )}
+              {hasBoundary && <div className="site-ready-summary"><CheckCircle2 size={20} /><div><strong>Site is ready</strong><span>{points.length} numbered boundary dots · center {center.lat.toFixed(5)}, {center.lng.toFixed(5)}</span></div></div>}
 
               <details className="site-builder-help">
                 <summary>How site selection works</summary>
-                <ol>
-                  <li>The map starts with a USA overview.</li>
-                  <li>Search a city, ZIP code, address, or place to jump to the work location.</li>
-                  <li>Click the outside corners of the real work area.</li>
-                  <li>Use Undo if a point is misplaced, then press Save Site.</li>
-                </ol>
+                <ol><li>The map starts with a USA overview.</li><li>Search a city, ZIP code, address, or place to jump to the work location.</li><li>Click the outside corners of the real work area. A numbered dot appears immediately.</li><li>Use Undo if a point is misplaced, then press Save Site.</li></ol>
               </details>
 
               {error && <div className="form-error">{error}</div>}
             </div>
 
             <div className="site-builder-actions site-builder-actions--sticky">
-              <div className="site-builder-actions__status">
-                {canSave ? <CheckCircle2 size={16} /> : <MapPin size={16} />}
-                <span>{missingLabel}</span>
-              </div>
+              <div className="site-builder-actions__status">{canSave ? <CheckCircle2 size={16} /> : <MapPin size={16} />}<span>{missingLabel}</span></div>
               <button type="button" className="button" onClick={close} disabled={saving}>Cancel</button>
-              <button type="submit" className="button button--primary site-builder-save" disabled={!canSave}>
-                {saving ? <LoaderCircle className="spin" size={17} /> : <Check size={17} />}
-                {saving ? 'Saving Site…' : 'Save Site'}
-              </button>
+              <button type="submit" className="button button--primary site-builder-save" disabled={!canSave}>{saving ? <LoaderCircle className="spin" size={17} /> : <Check size={17} />}{saving ? 'Saving Site…' : 'Save Site'}</button>
             </div>
           </aside>
 
           <div className="site-builder-map-wrap">
-            {apiKey ? <div ref={mapElement} className="site-builder-map" /> : (
-              <div className="site-builder-map-missing">
-                <MapPin size={28} />
-                <strong>Google Maps key required</strong>
-                <p>Add `VITE_GOOGLE_MAPS_API_KEY` to the frontend environment to draw real site areas.</p>
-              </div>
-            )}
+            {apiKey ? <div ref={mapElement} className="site-builder-map" /> : <div className="site-builder-map-missing"><MapPin size={28} /><strong>Google Maps key required</strong><p>Add `VITE_GOOGLE_MAPS_API_KEY` to the frontend environment to draw real site areas.</p></div>}
 
-            {apiKey && (
-              <div className="site-builder-map-search" role="search">
-                <Search size={18} />
-                <input
-                  value={address}
-                  onChange={(event) => setAddress(event.target.value)}
-                  onKeyDown={addressKeyDown}
-                  aria-label="Search USA map"
-                  placeholder="Search USA city, ZIP, address, or place…"
-                />
-                <button type="button" onClick={findAddress} disabled={!address.trim() || searching}>
-                  {searching ? <LoaderCircle className="spin" size={17} /> : 'Search'}
-                </button>
-              </div>
-            )}
+            {apiKey && <div className="site-builder-map-search" role="search"><Search size={18} /><input value={address} onChange={(event) => setAddress(event.target.value)} onKeyDown={addressKeyDown} aria-label="Search USA map" placeholder="Search USA city, ZIP, address, or place…" /><button type="button" onClick={findAddress} disabled={!address.trim() || searching}>{searching ? <LoaderCircle className="spin" size={17} /> : 'Search'}</button></div>}
 
-            <div className="site-builder-map-tip">
-              <MousePointer2 size={15} />
-              {hasBoundary ? `${points.length} points selected · boundary ready` : 'Search first, then click map corners to draw the work-site boundary'}
-            </div>
+            <div className="site-builder-map-tip"><MousePointer2 size={15} />{hasBoundary ? `${points.length} numbered dots selected · boundary ready` : 'Search first, then click map corners; each click appears as a dot'}</div>
             {mapMessage && <div className="site-builder-map-message">{mapMessage}</div>}
           </div>
         </form>
