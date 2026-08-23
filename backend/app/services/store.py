@@ -12,8 +12,11 @@ from app.schemas import (
     OperationalApprovalRequest,
     Site,
     SiteCreate,
+    SiteProfile,
+    SiteUpdate,
     SiteZone,
     SiteZoneCreate,
+    SiteZoneUpdate,
     Worker,
     WorkerCreate,
 )
@@ -44,6 +47,12 @@ class HeatShieldStore:
             if column not in existing:
                 db.execute(f'ALTER TABLE workers ADD COLUMN {column} {definition}')
 
+    @staticmethod
+    def _ensure_site_columns(db: sqlite3.Connection) -> None:
+        existing = {row['name'] for row in db.execute('PRAGMA table_info(sites)').fetchall()}
+        if 'profile_json' not in existing:
+            db.execute("ALTER TABLE sites ADD COLUMN profile_json TEXT NOT NULL DEFAULT '{}'")
+
     def _initialize(self) -> None:
         with self._connect() as db:
             db.executescript('''
@@ -55,6 +64,7 @@ class HeatShieldStore:
                     center_lng REAL NOT NULL,
                     polygon_json TEXT NOT NULL,
                     zones_json TEXT NOT NULL DEFAULT '[]',
+                    profile_json TEXT NOT NULL DEFAULT '{}',
                     status TEXT NOT NULL DEFAULT 'active',
                     created_at TEXT NOT NULL
                 );
@@ -108,15 +118,21 @@ class HeatShieldStore:
                 CREATE INDEX IF NOT EXISTS idx_operational_approvals_site_id ON operational_approvals(site_id);
             ''')
             self._ensure_worker_columns(db)
+            self._ensure_site_columns(db)
 
     @staticmethod
     def _site_from_row(row: sqlite3.Row) -> Site:
+        profile_raw = row['profile_json'] if 'profile_json' in row.keys() else '{}'
+        try:
+            profile = SiteProfile.model_validate(json.loads(profile_raw or '{}'))
+        except (ValueError, TypeError, json.JSONDecodeError):
+            profile = SiteProfile()
         return Site(
             id=row['id'], name=row['name'], address=row['address'],
             center=Coordinate(lat=row['center_lat'], lng=row['center_lng']),
             polygon=[Coordinate.model_validate(item) for item in json.loads(row['polygon_json'])],
             zones=[SiteZone.model_validate(item) for item in json.loads(row['zones_json'])],
-            status=row['status'],
+            status=row['status'], profile=profile,
         )
 
     @staticmethod
@@ -161,6 +177,10 @@ class HeatShieldStore:
             j = i
         return inside
 
+    @classmethod
+    def _polygon_inside(cls, child: list[Coordinate], parent: list[Coordinate]) -> bool:
+        return len(child) >= 3 and all(cls._point_in_polygon(point, parent) for point in child)
+
     def list_sites(self) -> list[Site]:
         with self._connect() as db:
             rows = db.execute('SELECT * FROM sites ORDER BY created_at DESC').fetchall()
@@ -177,26 +197,68 @@ class HeatShieldStore:
         site_id = f'site-{uuid4().hex[:12]}'
         with self._connect() as db:
             db.execute(
-                'INSERT INTO sites (id,name,address,center_lat,center_lng,polygon_json,zones_json,status,created_at) VALUES (?,?,?,?,?,?,?,\'active\',?)',
-                (site_id, payload.name.strip(), payload.address.strip(), payload.center.lat, payload.center.lng,
-                 json.dumps([point.model_dump() for point in payload.polygon]),
-                 json.dumps([zone.model_dump() for zone in payload.zones]), datetime.now(timezone.utc).isoformat()),
+                '''INSERT INTO sites (
+                    id,name,address,center_lat,center_lng,polygon_json,zones_json,profile_json,status,created_at
+                ) VALUES (?,?,?,?,?,?,?,?,\'active\',?)''',
+                (
+                    site_id, payload.name.strip(), payload.address.strip(), payload.center.lat, payload.center.lng,
+                    json.dumps([point.model_dump() for point in payload.polygon]),
+                    json.dumps([zone.model_dump() for zone in payload.zones]),
+                    json.dumps(payload.profile.model_dump()), datetime.now(timezone.utc).isoformat(),
+                ),
             )
         return self.get_site(site_id)
 
+    def update_site(self, site_id: str, payload: SiteUpdate) -> Site:
+        site = self.get_site(site_id)
+        workers = self.list_workers(site_id)
+        outside_workers = [worker.name for worker in workers if not self._point_in_polygon(worker.coordinate, payload.polygon)]
+        if outside_workers:
+            names = ', '.join(outside_workers[:3])
+            raise ValueError(f'New site boundary would leave assigned worker(s) outside: {names}. Move them first or redraw the boundary.')
+        outside_zones = [zone.name for zone in site.zones if zone.polygon and not self._polygon_inside(zone.polygon, payload.polygon)]
+        if outside_zones:
+            names = ', '.join(outside_zones[:3])
+            raise ValueError(f'New site boundary would leave operational zone(s) outside: {names}. Update or remove those zones first.')
+        with self._connect() as db:
+            db.execute(
+                '''UPDATE sites SET name=?, address=?, center_lat=?, center_lng=?, polygon_json=?, status=?, profile_json=?
+                   WHERE id=?''',
+                (
+                    payload.name.strip(), payload.address.strip(), payload.center.lat, payload.center.lng,
+                    json.dumps([point.model_dump() for point in payload.polygon]), payload.status,
+                    json.dumps(payload.profile.model_dump()), site_id,
+                ),
+            )
+        return self.get_site(site_id)
+
+    def delete_site(self, site_id: str) -> None:
+        self.get_site(site_id)
+        with self._connect() as db:
+            db.execute('DELETE FROM sites WHERE id = ?', (site_id,))
+
+    def _validated_zone(self, site: Site, payload: SiteZoneCreate | SiteZoneUpdate, zone_id: str) -> SiteZone:
+        if not self._point_in_polygon(payload.center, site.polygon) or not self._polygon_inside(payload.polygon, site.polygon):
+            raise ValueError('The complete operational-zone polygon must stay inside the saved site boundary.')
+        return SiteZone(
+            id=zone_id, name=payload.name.strip(), type=payload.type, center=payload.center,
+            polygon=payload.polygon, allowedTasks=payload.allowedTasks, operationalApproved=payload.operationalApproved,
+        )
+
     def add_zone(self, site_id: str, payload: SiteZoneCreate) -> Site:
         site = self.get_site(site_id)
-        if not self._point_in_polygon(payload.center, site.polygon):
-            raise ValueError('Operational zones must be placed inside the saved site boundary.')
-        zone = SiteZone(
-            id=f'zone-{uuid4().hex[:10]}',
-            name=payload.name.strip(),
-            type=payload.type,
-            center=payload.center,
-            allowedTasks=payload.allowedTasks,
-            operationalApproved=payload.operationalApproved,
-        )
+        zone = self._validated_zone(site, payload, f'zone-{uuid4().hex[:10]}')
         zones = [*site.zones, zone]
+        with self._connect() as db:
+            db.execute('UPDATE sites SET zones_json = ? WHERE id = ?', (json.dumps([item.model_dump() for item in zones]), site_id))
+        return self.get_site(site_id)
+
+    def update_zone(self, site_id: str, zone_id: str, payload: SiteZoneUpdate) -> Site:
+        site = self.get_site(site_id)
+        if not any(zone.id == zone_id for zone in site.zones):
+            raise FileNotFoundError(zone_id)
+        replacement = self._validated_zone(site, payload, zone_id)
+        zones = [replacement if zone.id == zone_id else zone for zone in site.zones]
         with self._connect() as db:
             db.execute('UPDATE sites SET zones_json = ? WHERE id = ?', (json.dumps([item.model_dump() for item in zones]), site_id))
         return self.get_site(site_id)
