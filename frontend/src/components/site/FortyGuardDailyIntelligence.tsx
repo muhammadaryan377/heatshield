@@ -159,11 +159,11 @@ export function FortyGuardDailyIntelligence({ site }: FortyGuardDailyIntelligenc
 
           {profile.tcmCellCount > 0 && (
             <div className="fg-metrics">
-              <article><span><ThermometerSun size={17} /> Site peak</span><strong>{metric(profile.maxTemperatureC, '°C')}</strong><small>{profile.tcmCellCount} TCM cells</small></article>
+              <article><span><ThermometerSun size={17} /> Site daily peak</span><strong>{metric(profile.maxTemperatureC, '°C')}</strong><small>Highest FortyGuard max_temperature across {profile.tcmCellCount} cells</small></article>
               <article><span><Clock3 size={17} /> Peak window</span><strong>{profile.peakHourLocal ?? '—'}</strong><small>{profile.peakHourUtc != null ? `${String(profile.peakHourUtc).padStart(2, '0')}:00 UTC` : 'Peak timing layer pending'}</small></article>
               <article><span><TimerReset size={17} /> Max above {profile.thresholdC.toFixed(1)}°C</span><strong>{metric(profile.maxHoursAboveThreshold, ' h')}</strong><small>Measured exceedance duration</small></article>
               <article><span><Flame size={17} /> Longest hot run</span><strong>{metric(profile.maxPersistenceHours, ' h')}</strong><small>Continuous persistence</small></article>
-              <article><span><Gauge size={17} /> Site mean peak</span><strong>{metric(profile.meanTemperatureC, '°C')}</strong><small>{metric(profile.minTemperatureC, '°C')} coolest cell</small></article>
+              <article><span><Gauge size={17} /> Site mean temperature</span><strong>{metric(profile.meanTemperatureC, '°C')}</strong><small>{metric(profile.minTemperatureC, '°C')} coolest average-temperature cell</small></article>
               <article><span><UsersRound size={17} /> Worker evidence</span><strong>{completeWorkers}/{profile.workers.length}</strong><small>Complete spatial joins</small></article>
             </div>
           )}
