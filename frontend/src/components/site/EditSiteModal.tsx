@@ -14,7 +14,6 @@ interface Props {
 type SearchAnchor = {
   coordinate: Coordinate
   formattedAddress: string
-  strict: boolean
 }
 
 const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY ?? ''
@@ -59,8 +58,13 @@ function isUnitedStatesResult(result: google.maps.GeocoderResult) {
   return result.address_components.some((component) => component.types.includes('country') && component.short_name === 'US')
 }
 
-function isSpecificSearch(result: google.maps.GeocoderResult) {
-  return !result.types.includes('administrative_area_level_1') && !result.types.includes('country')
+function isSpecificWorkLocation(result: google.maps.GeocoderResult) {
+  const acceptedTypes = new Set([
+    'street_address', 'premise', 'subpremise', 'postal_code', 'locality',
+    'sublocality', 'sublocality_level_1', 'neighborhood', 'point_of_interest',
+    'establishment', 'route',
+  ])
+  return result.types.some((type) => acceptedTypes.has(type))
 }
 
 export function EditSiteModal({ open, site, onClose, onUpdated }: Props) {
@@ -131,7 +135,7 @@ export function EditSiteModal({ open, site, onClose, onUpdated }: Props) {
           return
         }
         const next = { lat: event.latLng.lat(), lng: event.latLng.lng() }
-        if (anchor?.strict && distanceKm(anchor.coordinate, next) > MAX_DISTANCE_FROM_CONFIRMED_LOCATION_KM) {
+        if (anchor && distanceKm(anchor.coordinate, next) > MAX_DISTANCE_FROM_CONFIRMED_LOCATION_KM) {
           setError(`That boundary point is too far from ${anchor.formattedAddress}. Search the correct US location and redraw.`)
           return
         }
@@ -188,6 +192,8 @@ export function EditSiteModal({ open, site, onClose, onUpdated }: Props) {
     locationChangedRef.current = true
     setLocationConfirmed(false)
     searchAnchorRef.current = null
+    locationMarkerRef.current?.setMap(null)
+    locationMarkerRef.current = null
     setDrawing(false)
     setError(message)
   }
@@ -207,11 +213,7 @@ export function EditSiteModal({ open, site, onClose, onUpdated }: Props) {
       return
     }
     if (!locationChanged) {
-      setLocationChanged(true)
-      locationChangedRef.current = true
-      setLocationConfirmed(false)
-      searchAnchorRef.current = null
-      setError('To change the saved boundary, first search and confirm the US work location. This prevents a valid site name from being paired with coordinates from another place.')
+      requireLocationConfirmation('To change the saved boundary, first search and confirm the US work location. This prevents a valid site name from being paired with coordinates from another place.')
       return
     }
     setDrawing(true)
@@ -248,11 +250,16 @@ export function EditSiteModal({ open, site, onClose, onUpdated }: Props) {
         setError('FortyGuard work sites must resolve to a United States location.')
         return
       }
+      if (!isSpecificWorkLocation(result)) {
+        setLocationConfirmed(false)
+        searchAnchorRef.current = null
+        setError('Choose a specific US city, ZIP code, street address, or place. A state/country-only result is too broad for a FortyGuard site AOI.')
+        return
+      }
       const location = result.geometry.location
       const anchor: SearchAnchor = {
         coordinate: { lat: location.lat(), lng: location.lng() },
         formattedAddress: result.formatted_address,
-        strict: isSpecificSearch(result),
       }
       searchAnchorRef.current = anchor
       setAddress(result.formatted_address)
@@ -280,7 +287,7 @@ export function EditSiteModal({ open, site, onClose, onUpdated }: Props) {
     if (locationChanged && !locationConfirmed) { setError('Confirm the changed US location before saving. HeatShield will not send an unconfirmed moved boundary to FortyGuard.'); return }
     if (points.length < 3) { setError('Site boundary needs at least 3 map points.'); return }
     const anchor = searchAnchorRef.current
-    if (locationChanged && anchor?.strict && distanceKm(anchor.coordinate, center) > MAX_DISTANCE_FROM_CONFIRMED_LOCATION_KM) {
+    if (locationChanged && anchor && distanceKm(anchor.coordinate, center) > MAX_DISTANCE_FROM_CONFIRMED_LOCATION_KM) {
       setError(`The boundary center is too far from ${anchor.formattedAddress}. Search the correct US location and redraw the boundary.`)
       return
     }
@@ -307,7 +314,7 @@ export function EditSiteModal({ open, site, onClose, onUpdated }: Props) {
   return <div className="modal-backdrop" role="presentation">
     <section className="site-edit-modal" role="dialog" aria-modal="true" aria-labelledby="edit-site-title">
       <header className="site-edit-modal__head">
-        <div><span className="eyebrow">USA SITE CONFIGURATION</span><h2 id="edit-site-title">Edit {site.name}</h2><p>Profile-only edits keep the saved boundary. Any address or boundary change must be re-confirmed against a US Google Maps result before HeatShield sends that AOI to FortyGuard.</p></div>
+        <div><span className="eyebrow">USA SITE CONFIGURATION</span><h2 id="edit-site-title">Edit {site.name}</h2><p>Profile-only edits keep the saved boundary. Any address or boundary change must be re-confirmed against a specific US Google Maps result before HeatShield sends that AOI to FortyGuard.</p></div>
         <button type="button" className="icon-button" onClick={onClose} disabled={saving} aria-label="Close site editor"><X size={20}/></button>
       </header>
       <form className="site-edit-modal__body" onSubmit={submit}>
@@ -315,7 +322,7 @@ export function EditSiteModal({ open, site, onClose, onUpdated }: Props) {
           <div className="site-edit-grid">
             <label><span>Site name</span><input value={name} onChange={(e) => setName(e.target.value)} /></label>
             <label><span>Status</span><select value={status} onChange={(e) => setStatus(e.target.value as typeof status)}><option value="active">Active</option><option value="inactive">Inactive</option></select></label>
-            <label className="wide"><span>US address / location</span><div className="field-with-action"><input value={address} onChange={(e) => changeAddress(e.target.value)} placeholder="Miami, FL or US street address"/><button type="button" onClick={findUsLocation} disabled={searching || !address.trim()}>{searching ? <LoaderCircle className="spin" size={16}/> : <Search size={16}/>}</button></div>{locationConfirmed && <small><Check size={13}/> US location confirmed. Draw the new boundary on the map.</small>}{locationChanged && !locationConfirmed && <small>Location/boundary changed · US confirmation required before save.</small>}</label>
+            <label className="wide"><span>US address / location</span><div className="field-with-action"><input value={address} onChange={(e) => changeAddress(e.target.value)} placeholder="Miami, FL or US street address"/><button type="button" onClick={findUsLocation} disabled={searching || !address.trim()}>{searching ? <LoaderCircle className="spin" size={16}/> : <Search size={16}/>}</button></div>{locationConfirmed && <small><Check size={13}/> Specific US location confirmed. Draw the new boundary on the map.</small>}{locationChanged && !locationConfirmed && <small>Location/boundary changed · US confirmation required before save.</small>}</label>
             <label><span>Site type</span><select value={profile.siteType} onChange={(e) => setProfileField('siteType', e.target.value as SiteProfile['siteType'])}><option value="construction">Construction</option><option value="warehouse">Warehouse</option><option value="industrial">Industrial</option><option value="utilities">Utilities</option><option value="logistics">Logistics</option><option value="other">Other</option></select></label>
             <label><span>Surface</span><select value={profile.surfaceType} onChange={(e) => setProfileField('surfaceType', e.target.value as SiteProfile['surfaceType'])}><option value="mixed">Mixed</option><option value="asphalt">Asphalt</option><option value="concrete">Concrete</option><option value="roof">Roof</option><option value="soil">Soil</option><option value="other">Other</option></select></label>
             <label><span>Operating start</span><input type="time" value={profile.operatingStart ?? ''} onChange={(e) => setProfileField('operatingStart', e.target.value || null)} /></label>
@@ -337,7 +344,7 @@ export function EditSiteModal({ open, site, onClose, onUpdated }: Props) {
             <button type="button" onClick={toggleDrawing} className={drawing ? 'active' : ''}><MapPin size={15}/> {drawing ? 'Drawing on' : 'Draw points'}</button>
           </div>
           {apiKey ? <div ref={mapNode} className="site-edit-map" /> : <div className="site-edit-map-empty"><MapPin size={26}/><strong>Google Maps key required</strong></div>}
-          <div className="site-edit-map-note"><Check size={15}/> Any moved/redrawn boundary is locked to the freshly confirmed US location. Each click is a numbered dot; this exact polygon becomes the FortyGuard AOI.</div>
+          <div className="site-edit-map-note"><Check size={15}/> Any moved/redrawn boundary is locked within 80 km of the freshly confirmed US location. Each click is a numbered dot; this exact polygon becomes the FortyGuard AOI.</div>
         </div>
         <footer className="site-edit-actions"><button type="button" className="button" onClick={onClose} disabled={saving}>Cancel</button><button type="submit" className="button button--primary" disabled={saving || points.length < 3 || locationChanged && !locationConfirmed}>{saving ? <LoaderCircle className="spin" size={17}/> : <Save size={17}/>} {saving ? 'Saving…' : 'Save Site Changes'}</button></footer>
       </form>
