@@ -3,10 +3,19 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import sys
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo
+
+# Allow this file to be run directly from backend/ with:
+#   python tools/fortyguard_probe.py
+# Python otherwise puts backend/tools (not backend/) on sys.path, so `app`
+# cannot be imported even though the project is correctly laid out.
+BACKEND_ROOT = Path(__file__).resolve().parents[1]
+if str(BACKEND_ROOT) not in sys.path:
+    sys.path.insert(0, str(BACKEND_ROOT))
 
 import httpx
 
@@ -334,7 +343,7 @@ async def run(include_live: bool, full: bool) -> None:
             )
         )
 
-    output = Path(__file__).resolve().parents[1] / "fortyguard_probe_report.json"
+    output = BACKEND_ROOT / "fortyguard_probe_report.json"
     output.write_text(json.dumps(report, indent=2), encoding="utf-8")
     print(f"\nSaved sanitized probe report to: {output}")
     print("The API key is never written to the report.")
