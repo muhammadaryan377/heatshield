@@ -23,7 +23,11 @@ interface FortyGuardDailyIntelligenceProps {
 
 type Granularity = 60 | 80 | 100
 
-const today = () => new Date().toISOString().slice(0, 10)
+const lastCompleteDay = () => {
+  const date = new Date()
+  date.setDate(date.getDate() - 1)
+  return date.toISOString().slice(0, 10)
+}
 
 function metric(value: number | null | undefined, suffix = '', digits = 1) {
   return value == null ? '—' : `${value.toFixed(digits)}${suffix}`
@@ -37,19 +41,20 @@ function layerName(layer: FortyGuardLayerStatus['analyticType']) {
 }
 
 function LayerBadge({ layer }: { layer: FortyGuardLayerStatus }) {
+  const activity = layer.activityId ? ` · activity ${layer.activityId.slice(0, 8)}…` : ''
   return (
     <div className={`fg-layer fg-layer--${layer.status}`}>
       <span>{layer.status === 'verified' ? <CheckCircle2 size={15} /> : <TriangleAlert size={15} />}</span>
       <div>
         <strong>{layerName(layer.analyticType)}</strong>
-        <small>{layer.status === 'verified' ? `${layer.cellCount} cells${layer.units ? ` · ${layer.units}` : ''}` : 'Unavailable'}</small>
+        <small>{layer.status === 'verified' ? `${layer.cellCount} cells${layer.units ? ` · ${layer.units}` : ''}${activity}` : `Unavailable${activity}`}</small>
       </div>
     </div>
   )
 }
 
 export function FortyGuardDailyIntelligence({ site }: FortyGuardDailyIntelligenceProps) {
-  const [studyDate, setStudyDate] = useState(today)
+  const [studyDate, setStudyDate] = useState(lastCompleteDay)
   const [thresholdC, setThresholdC] = useState(30)
   const [granularity, setGranularity] = useState<Granularity>(100)
   const [profile, setProfile] = useState<FortyGuardDailyProfile | null>(null)
@@ -59,7 +64,7 @@ export function FortyGuardDailyIntelligence({ site }: FortyGuardDailyIntelligenc
   useEffect(() => {
     setProfile(null)
     setError(null)
-    setStudyDate(today())
+    setStudyDate(lastCompleteDay())
   }, [site.id])
 
   const completeWorkers = useMemo(
@@ -93,8 +98,8 @@ export function FortyGuardDailyIntelligence({ site }: FortyGuardDailyIntelligenc
       <div className="fg-intelligence__header">
         <div>
           <span className="fg-intelligence__eyebrow"><Flame size={14} /> FORTYGUARD INTELLIGENCE ENGINE</span>
-          <h2>24-hour site heat profile</h2>
-          <p>Measure where heat peaks, when it peaks, and how long each area stays above the selected threshold. Worker locations are joined to the FortyGuard cells they occupy.</p>
+          <h2>Completed-day site heat profile</h2>
+          <p>Use real FortyGuard TCM, peak timing, exceedance and persistence layers to measure where heat peaks, when it peaks, and how long each area stays above the selected threshold. Worker coordinates are joined to the provider cells they occupy.</p>
         </div>
         <div className="fg-provider-chip"><span>FG</span><div><strong>FortyGuard</strong><small>Primary thermal evidence</small></div></div>
       </div>
@@ -102,7 +107,7 @@ export function FortyGuardDailyIntelligence({ site }: FortyGuardDailyIntelligenc
       <div className="fg-controls">
         <label>
           <span><CalendarDays size={14} /> Analysis date</span>
-          <input type="date" min="2021-01-01" max={today()} value={studyDate} onChange={(event) => { setStudyDate(event.target.value); setProfile(null) }} />
+          <input type="date" min="2019-01-01" max={lastCompleteDay()} value={studyDate} onChange={(event) => { setStudyDate(event.target.value); setProfile(null) }} />
         </label>
         <label>
           <span><Gauge size={14} /> Heat threshold</span>
@@ -127,7 +132,7 @@ export function FortyGuardDailyIntelligence({ site }: FortyGuardDailyIntelligenc
           <div className="fg-ready-state__icon"><Activity size={23} /></div>
           <div>
             <strong>Ready to build a provider-backed daily profile</strong>
-            <p>One run requests TCM, time-of-measure, exceedance and persistence. It is intentionally user-triggered so browser refreshes do not spend provider credits.</p>
+            <p>The default is yesterday, the latest complete day. One run requests four real FortyGuard layers and exposes their activity IDs so the evidence is traceable.</p>
           </div>
           <div className="fg-ready-state__flow"><span>TCM</span><i>→</i><span>Peak time</span><i>→</i><span>Duration</span><i>→</i><span>Workers</span></div>
         </div>
