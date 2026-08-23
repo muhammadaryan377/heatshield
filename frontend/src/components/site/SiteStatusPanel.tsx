@@ -13,6 +13,18 @@ function clockLabel(value?: string | null) {
   return date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
 }
 
+function providerText(value?: string | null) {
+  if (!value) return value ?? ''
+  return value
+    .replaceAll('America/New_York', 'US Eastern Time')
+    .replaceAll('America/Chicago', 'US Central Time')
+    .replaceAll('America/Denver', 'US Mountain Time')
+    .replaceAll('America/Los_Angeles', 'US Pacific Time')
+    .replaceAll('America/Phoenix', 'Arizona Time')
+    .replaceAll('America/Anchorage', 'Alaska Time')
+    .replaceAll('Pacific/Honolulu', 'Hawaii Time')
+}
+
 function Metric({ icon: Icon, label, value, footer, tone = '' }: { icon: typeof ThermometerSun; label: string; value: string; footer: string; tone?: string }) {
   return (
     <article className="metric-card">
@@ -59,7 +71,7 @@ export function SiteStatusPanel({ data, onRefresh }: SiteStatusPanelProps) {
           <strong>FortyGuard is HeatShield&apos;s primary spatial thermal source</strong>
           <p>{data.thermalStatus === 'verified' || data.thermalStatus === 'recent_verified'
             ? `Spatial thermal evidence is ${data.thermalStatus === 'verified' ? 'current' : 'recent'} and provider-verified${data.thermalObservedAt ? ` at ${clockLabel(data.thermalObservedAt)}` : ''}.`
-            : data.thermalMessage ?? 'Current FortyGuard thermal cells are not available yet. HeatShield will not invent spatial heat cells.'}</p>
+            : providerText(data.thermalMessage) || 'Current FortyGuard thermal cells are not available yet. HeatShield will not invent spatial heat cells.'}</p>
         </div>
       </div>
 
@@ -68,7 +80,7 @@ export function SiteStatusPanel({ data, onRefresh }: SiteStatusPanelProps) {
           <CloudOff size={21} />
           <div>
             <strong>No verified atmospheric observation is being shown</strong>
-            <p>{data.statusMessage ?? 'HeatShield could not retrieve verified atmospheric context for this site.'}</p>
+            <p>{providerText(data.statusMessage) || 'HeatShield could not retrieve verified atmospheric context for this site.'}</p>
           </div>
           <button type="button" className="button button--quiet" onClick={onRefresh}>Retry providers</button>
         </div>
@@ -79,7 +91,7 @@ export function SiteStatusPanel({ data, onRefresh }: SiteStatusPanelProps) {
           <AlertTriangle size={19} />
           <div>
             <strong>NWS is atmospheric fallback only</strong>
-            <p>{data.thermalMessage ?? 'Current/recent FortyGuard thermal cells are not available for this site right now.'} The NWS values below provide site-level atmospheric context; they do not replace FortyGuard spatial cells or create synthetic hotspots.</p>
+            <p>{providerText(data.thermalMessage) || 'Current/recent FortyGuard thermal cells are not available for this site right now.'} The NWS values below provide site-level atmospheric context; they do not replace FortyGuard spatial cells or create synthetic hotspots.</p>
           </div>
         </div>
       )}
@@ -87,7 +99,7 @@ export function SiteStatusPanel({ data, onRefresh }: SiteStatusPanelProps) {
       {conditions && !data.fallbackActive && data.statusMessage && (
         <div className="live-data-empty">
           <AlertTriangle size={19} />
-          <div><strong>Using the latest verified FortyGuard observation</strong><p>{data.statusMessage}</p></div>
+          <div><strong>Using the latest verified FortyGuard observation</strong><p>{providerText(data.statusMessage)}</p></div>
         </div>
       )}
 
