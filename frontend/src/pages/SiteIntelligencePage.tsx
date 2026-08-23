@@ -4,16 +4,13 @@ import { useSearchParams } from 'react-router-dom'
 import { AppShell } from '../components/layout/AppShell'
 import { Topbar } from '../components/layout/Topbar'
 import { CreateSiteModal } from '../components/site/CreateSiteModal'
-import { ExposureHotspots } from '../components/site/ExposureHotspots'
-import { FortyGuardDailyIntelligence } from '../components/site/FortyGuardDailyIntelligence'
-import { LiveConditions } from '../components/site/LiveConditions'
-import { NextAction } from '../components/site/NextAction'
 import { SiteMap } from '../components/site/SiteMap'
 import { SiteStatusPanel } from '../components/site/SiteStatusPanel'
 import { WorkerOverview } from '../components/site/WorkerOverview'
 import { StatePanel } from '../components/ui/StatePanel'
 import { api } from '../lib/api'
 import type { Site, SiteIntelligence } from '../types/site'
+import '../home-command-center.css'
 
 const STORAGE_KEY = 'heatshield:selected-site'
 
@@ -68,8 +65,7 @@ export function SiteIntelligencePage() {
       active = false
       controller.abort()
     }
-    // We intentionally read the initial query parameter once. Site changes are
-    // handled by selectSite and mirrored back to the URL below.
+    // Site changes after initial load are handled by selectSite and mirrored to the URL.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
@@ -129,7 +125,7 @@ export function SiteIntelligencePage() {
         onCreateSite={() => setCreateSiteOpen(true)}
       />
 
-      <div className="page-content">
+      <div className="page-content page-content--command-center">
         {sitesLoading && <StatePanel kind="loading" title="Loading HeatShield" detail="Checking your work sites…" />}
 
         {!sitesLoading && error && !sites.length && (
@@ -147,37 +143,29 @@ export function SiteIntelligencePage() {
             <div className="first-site-state__content">
               <span className="eyebrow">START WITH REAL SITE DATA</span>
               <h2>Create your first work site</h2>
-              <p>HeatShield starts empty. Draw the complete work area on Google Maps, then add the people who actually work there. Environmental intelligence is requested only for the site you create.</p>
+              <p>Draw the complete work area on Google Maps, then add the people who work there. HeatShield joins worker context to verified environmental evidence instead of inventing operational records.</p>
               <button type="button" className="button button--primary first-site-state__cta" onClick={() => setCreateSiteOpen(true)}><Plus size={18} /> Create Site</button>
               <div className="setup-sequence">
-                <div><span><Building2 size={17} /></span><strong>1. Create site</strong><small>Draw the full polygon on the map</small></div>
-                <div><span><UserPlus size={17} /></span><strong>2. Add workers</strong><small>Assign real workers and positions</small></div>
-                <div><span><Info size={17} /></span><strong>3. Analyze</strong><small>Fetch verified heat conditions</small></div>
+                <div><span><Building2 size={17} /></span><strong>1. Create site</strong><small>Draw the complete work polygon</small></div>
+                <div><span><UserPlus size={17} /></span><strong>2. Add workers</strong><small>Assign tasks and positions</small></div>
+                <div><span><Info size={17} /></span><strong>3. Decide</strong><small>Turn heat evidence into actions</small></div>
               </div>
             </div>
           </section>
         )}
 
-        {selectedSiteId && loading && !data && <StatePanel kind="loading" title="Loading Site Intelligence" detail="Reading the selected site and requesting live environmental data…" />}
+        {selectedSiteId && loading && !data && <StatePanel kind="loading" title="Loading Site Intelligence" detail="Reading the selected site and requesting verified environmental evidence…" />}
         {selectedSiteId && error && !data && <StatePanel kind="error" title="Site Intelligence unavailable" detail={error} onRetry={reload} />}
 
         {data && (
           <>
             {error && <div className="inline-warning"><Info size={16} /><span>Latest refresh failed. Showing the last successful site response.</span><button type="button" onClick={reload}>Retry</button></div>}
-            <div className="dashboard-grid dashboard-grid--top">
+            <div className="dashboard-grid dashboard-grid--top command-center-grid">
               <SiteMap site={data.site} workers={data.workers} temperatureC={data.conditions?.temperatureC} weatherLabel={data.conditions?.weatherLabel} />
               <SiteStatusPanel data={data} onRefresh={reload} />
             </div>
-
-            <FortyGuardDailyIntelligence site={data.site} />
-
-            <div className="dashboard-grid dashboard-grid--bottom">
+            <div className="command-center-workers">
               <WorkerOverview workers={data.workers} siteId={data.site.id} />
-              <div className="supporting-grid">
-                <LiveConditions data={data} />
-                <ExposureHotspots hotspots={data.hotspots} />
-                <NextAction data={data} />
-              </div>
             </div>
           </>
         )}
