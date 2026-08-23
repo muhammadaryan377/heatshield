@@ -22,7 +22,7 @@ import type { HistoricalHeatBehaviorResponse, HistoricalZoneSample } from '../ty
 import type { Site } from '../types/site'
 
 const STORAGE_KEY = 'heatshield:selected-site'
-type Period = 7 | 30 | 90 | 'custom'
+type Period = 7 | 30 | 'custom'
 type MapMetric = 'exceedance' | 'persistence' | 'peak'
 
 function dateOnly(date: Date) {
@@ -32,11 +32,25 @@ function dateOnly(date: Date) {
   return `${year}-${month}-${day}`
 }
 
+function lastCompleteDay() {
+  const date = new Date()
+  date.setDate(date.getDate() - 1)
+  return dateOnly(date)
+}
+
 function presetRange(days: number) {
   const end = new Date()
+  end.setDate(end.getDate() - 1)
   const start = new Date(end)
   start.setDate(end.getDate() - (days - 1))
   return { startDate: dateOnly(start), endDate: dateOnly(end) }
+}
+
+function inclusiveDayCount(start: string, end: string) {
+  const startMs = Date.parse(`${start}T00:00:00Z`)
+  const endMs = Date.parse(`${end}T00:00:00Z`)
+  if (!Number.isFinite(startMs) || !Number.isFinite(endMs)) return 0
+  return Math.floor((endMs - startMs) / 86_400_000) + 1
 }
 
 function formatDate(value: string) {
@@ -130,6 +144,14 @@ export function HeatHistoryPage() {
         setError('Custom start date must be on or before the end date.')
         return
       }
+      if (customEnd > lastCompleteDay()) {
+        setError('FortyGuard range history must end on yesterday or an earlier completed day.')
+        return
+      }
+      if (inclusiveDayCount(customStart, customEnd) > 31) {
+        setError('FortyGuard range-of-days analysis supports up to 31 days per request.')
+        return
+      }
       range = { startDate: customStart, endDate: customEnd }
     } else {
       range = presetRange(period)
@@ -199,11 +221,11 @@ export function HeatHistoryPage() {
             <div className="history-intro__copy">
               <span className="history-eyebrow">FORTYGUARD HISTORICAL INTELLIGENCE</span>
               <h2>How does {selectedSite.name} normally behave under heat?</h2>
-              <p>Three shared site-wide FortyGuard range analyses compare repeated threshold exceedance, continuous heat persistence and the time each thermal cell usually peaks.</p>
+              <p>Three shared site-wide FortyGuard range analyses compare repeated threshold exceedance, continuous heat persistence and the time each thermal cell usually peaks. HeatShield uses completed days so the provider is not asked to summarize a partial current day.</p>
             </div>
             <div className="history-intro__facts">
               <span><MapPinned size={16} /> {approvedZoneCount} approved zone{approvedZoneCount === 1 ? '' : 's'}</span>
-              <span><ShieldCheck size={16} /> U.S. historical coverage</span>
+              <span><ShieldCheck size={16} /> FortyGuard coverage from 2019</span>
               <span><Sparkles size={16} /> 3 provider analyses per run</span>
             </div>
           </section>
@@ -212,14 +234,14 @@ export function HeatHistoryPage() {
             <div className="history-control-group history-control-group--period">
               <label>Analysis period</label>
               <div className="history-period-switch">
-                {[7, 30, 90].map((days) => <button key={days} type="button" className={period === days ? 'active' : ''} onClick={() => { setPeriod(days as 7 | 30 | 90); setResult(null) }}>Last {days} days</button>)}
-                <button type="button" className={period === 'custom' ? 'active' : ''} onClick={() => { setPeriod('custom'); setResult(null) }}>Custom</button>
+                {[7, 30].map((days) => <button key={days} type="button" className={period === days ? 'active' : ''} onClick={() => { setPeriod(days as 7 | 30); setResult(null) }}>Last {days} complete days</button>)}
+                <button type="button" className={period === 'custom' ? 'active' : ''} onClick={() => { setPeriod('custom'); setResult(null) }}>Custom ≤31d</button>
               </div>
             </div>
 
             {period === 'custom' && <div className="history-custom-dates">
-              <label><span>Start date</span><input type="date" value={customStart} min="2021-01-01" onChange={(event) => { setCustomStart(event.target.value); setResult(null) }} /></label>
-              <label><span>End date</span><input type="date" value={customEnd} min="2021-01-01" onChange={(event) => { setCustomEnd(event.target.value); setResult(null) }} /></label>
+              <label><span>Start date</span><input type="date" value={customStart} min="2019-01-01" max={lastCompleteDay()} onChange={(event) => { setCustomStart(event.target.value); setResult(null) }} /></label>
+              <label><span>End date</span><input type="date" value={customEnd} min="2019-01-01" max={lastCompleteDay()} onChange={(event) => { setCustomEnd(event.target.value); setResult(null) }} /></label>
             </div>}
 
             <label className="history-field"><span>Heat threshold</span><div className="history-threshold"><input type="number" min={-20} max={160} step={1} value={thresholdF} onChange={(event) => { setThresholdF(Number(event.target.value)); setResult(null) }} /><strong>°F</strong></div><small>{fahrenheitToC(thresholdF).toFixed(1)}°C sent to FortyGuard</small></label>
@@ -231,7 +253,7 @@ export function HeatHistoryPage() {
             </button>
           </section>
 
-          {!result && !loading && selectedSitePolygonReady && <section className="history-ready panel"><History size={28} /><div><strong>Ready for historical analysis</strong><p>{selectedSite.name} is selected. Choose the period and threshold, then run FortyGuard. HeatShield will not fabricate historical cells when provider evidence is unavailable.</p></div></section>}
+          {!result && !loading && selectedSitePolygonReady && <section className="history-ready panel"><History size={28} /><div><strong>Ready for FortyGuard historical analysis</strong><p>{selectedSite.name} is selected. Choose 7 or 30 completed days, or a custom range up to 31 days. HeatShield will not fabricate historical cells when provider evidence is unavailable.</p></div></section>}
           {!selectedSitePolygonReady && <section className="history-ready history-ready--blocked panel"><AlertTriangle size={28} /><div><strong>Site boundary required</strong><p>Historical analysis is site-specific. Open Sites, draw the complete work-area polygon, save it, then return here.</p></div><button className="button button--quiet" type="button" onClick={() => navigate('/sites')}>Open Sites</button></section>}
           {loading && <section className="history-ready panel"><LoaderCircle className="history-spin" size={28} /><div><strong>Building site heat history</strong><p>Requesting exceedance, persistence and time-of-measure layers for the full saved site polygon, then joining them to approved operational zones when available.</p></div></section>}
 
@@ -277,7 +299,7 @@ export function HeatHistoryPage() {
 
             <section className="history-provenance panel">
               <div><span className="history-eyebrow">DATA PROVENANCE</span><h2>FortyGuard analysis layers</h2></div>
-              <div className="history-layer-statuses">{result.layers.map((layer) => <article key={layer.analyticType}><span className={`history-layer-dot history-layer-dot--${layer.status}`} /><div><strong>{layer.analyticType.replaceAll('_', ' ')}</strong><small>{layer.status === 'verified' ? `${layer.cellCount} verified cells` : layer.message ?? 'Unavailable'}</small></div></article>)}</div>
+              <div className="history-layer-statuses">{result.layers.map((layer) => <article key={layer.analyticType}><span className={`history-layer-dot history-layer-dot--${layer.status}`} /><div><strong>{layer.analyticType.replaceAll('_', ' ')}</strong><small>{layer.status === 'verified' ? `${layer.cellCount} verified cells${layer.activityId ? ` · ${layer.activityId.slice(0, 8)}…` : ''}` : layer.message ?? 'Unavailable'}</small></div></article>)}</div>
               <p>{result.message}</p>
             </section>
           </>}
