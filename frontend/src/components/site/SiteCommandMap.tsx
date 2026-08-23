@@ -42,6 +42,13 @@ function heatColor(value: number, min: number, max: number) {
   return '#1c9a94'
 }
 
+function observedLabel(value?: string | null) {
+  if (!value) return 'timestamp unavailable'
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return value
+  return date.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
+}
+
 export function SiteCommandMap({ site, workers }: Props) {
   const node = useRef<HTMLDivElement>(null)
   const mapRef = useRef<google.maps.Map | null>(null)
@@ -117,7 +124,7 @@ export function SiteCommandMap({ site, workers }: Props) {
           fillOpacity: .48,
           zIndex: 1,
         })
-        const info = new google.maps.InfoWindow({ content: `<strong>${tile.temperatureC.toFixed(1)}°C</strong><br/><small>FortyGuard thermal cell</small>` })
+        const info = new google.maps.InfoWindow({ content: `<strong>${tile.temperatureC.toFixed(1)}°C</strong><br/><small>FortyGuard thermal cell · ${observedLabel(thermal.observedAt)}</small>` })
         polygon.addListener('click', (event: google.maps.PolyMouseEvent) => {
           if (event.latLng) info.setPosition(event.latLng)
           info.open({ map })
@@ -203,17 +210,18 @@ export function SiteCommandMap({ site, workers }: Props) {
     }
     if (thermal?.dataStatus === 'verified') {
       setLayers((current) => ({ ...current, heat: true }))
+      setMessage(thermal.message ?? `FortyGuard layer verified at ${observedLabel(thermal.observedAt)}.`)
       return
     }
     setThermalLoading(true)
-    setMessage(null)
+    setMessage('Requesting a real FortyGuard TCM layer for this saved site polygon…')
     try {
       const response = await api.generateThermalMap(site.id, { mode: 'site', granularityMeters: 100 })
       setThermal(response)
+      setMessage(response.message ?? (response.dataStatus === 'verified' ? 'FortyGuard thermal layer verified.' : 'FortyGuard thermal cells are unavailable for this site.'))
       if (response.dataStatus === 'verified') setLayers((current) => ({ ...current, heat: true }))
-      else setMessage(response.message ?? 'FortyGuard thermal cells are unavailable for this site.')
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : 'Could not load heat layer.')
+      setMessage(error instanceof Error ? error.message : 'Could not load FortyGuard heat layer.')
     } finally {
       setThermalLoading(false)
     }
@@ -223,16 +231,16 @@ export function SiteCommandMap({ site, workers }: Props) {
 
   return <section className="site-command-map panel">
     <div className="site-command-map__bar">
-      <div><span className="sites-eyebrow">SPATIAL OPERATIONS</span><h2>{site.name} map</h2></div>
+      <div><span className="sites-eyebrow">SPATIAL OPERATIONS · FORTYGUARD THERMAL CORE</span><h2>{site.name} map</h2></div>
       <div className="site-command-map__layers">
         <button type="button" className={layers.workers ? 'active' : ''} onClick={() => toggle('workers')}><UsersRound size={15}/> Workers</button>
         <button type="button" className={layers.zones ? 'active' : ''} onClick={() => toggle('zones')}><ShieldCheck size={15}/> Zones</button>
-        <button type="button" className={layers.heat ? 'active' : ''} onClick={() => void toggleHeat()} disabled={thermalLoading}>{thermalLoading ? <LoaderCircle className="spin" size={15}/> : <Flame size={15}/>} Heat</button>
+        <button type="button" className={layers.heat ? 'active' : ''} onClick={() => void toggleHeat()} disabled={thermalLoading}>{thermalLoading ? <LoaderCircle className="spin" size={15}/> : <Flame size={15}/>} FortyGuard Heat</button>
         <button type="button" className={mapType === 'satellite' ? 'active' : ''} onClick={() => setMapType((current) => current === 'satellite' ? 'roadmap' : 'satellite')}><Satellite size={15}/> {mapType === 'satellite' ? 'Satellite' : 'Road'}</button>
       </div>
     </div>
     <div className="site-command-map__canvas">{apiKey ? <div ref={node} className="site-command-map__google"/> : <div className="site-command-map__empty"><MapPinned size={28}/><strong>Google Maps key required</strong><span>Configure VITE_GOOGLE_MAPS_API_KEY for the operations map.</span></div>}</div>
-    <div className="site-command-map__legend"><span><i className="legend-boundary"/> Site boundary</span><span><i className="legend-worker"/> Worker</span><span><i className="legend-zone"/> Operational zone</span><span><Layers3 size={14}/> Click workers and zones for details</span></div>
+    <div className="site-command-map__legend"><span><i className="legend-boundary"/> Site boundary</span><span><i className="legend-worker"/> Worker</span><span><i className="legend-zone"/> Operational zone</span>{thermal?.dataStatus === 'verified' && <span><Flame size={14}/> FortyGuard · {thermal.tileCount} cells · {observedLabel(thermal.observedAt)}</span>}<span><Layers3 size={14}/> Click workers, zones and heat cells for details</span></div>
     {message && <div className="site-command-map__message">{message}</div>}
   </section>
 }
