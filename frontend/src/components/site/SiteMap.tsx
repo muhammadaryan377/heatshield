@@ -89,6 +89,52 @@ function observedLabel(value?: string | null) {
   return date.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
 }
 
+function escapeHtml(value?: string | null) {
+  const input = value ?? ''
+  return input.replace(/[&<>'"]/g, (character) => ({
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    "'": '&#39;',
+    '"': '&quot;',
+  })[character] ?? character)
+}
+
+function workerRecommendation(worker: Worker) {
+  if (worker.risk === 'extreme') return 'Stop or relocate this task and reassess exposure immediately.'
+  if (worker.risk === 'high') return 'Reassign or reduce exposure before continuing this task.'
+  if (worker.risk === 'medium') return 'Monitor exposure and schedule a recovery break.'
+  return 'Normal work may continue with routine monitoring.'
+}
+
+function workerPopupHtml(worker: Worker, currentCellTemperature?: number | null) {
+  const risk = worker.risk.charAt(0).toUpperCase() + worker.risk.slice(1)
+  const tone = worker.risk === 'high' || worker.risk === 'extreme' ? 'danger' : worker.risk === 'medium' ? 'watch' : 'safe'
+  const currentTemperature = currentCellTemperature == null ? '—' : `${currentCellTemperature.toFixed(1)}°C`
+  return `
+    <div class="worker-map-popup" data-worker-popup="${escapeHtml(worker.id)}">
+      <div class="worker-map-popup__header">
+        <span class="worker-map-popup__avatar">${escapeHtml(worker.initials || worker.name.slice(0, 1).toUpperCase())}</span>
+        <span><strong>${escapeHtml(worker.name)}</strong><small>${escapeHtml(worker.role)} • ${escapeHtml(worker.location)}</small></span>
+      </div>
+      <div class="worker-map-popup__metrics">
+        <div><span>Current cell temp</span><strong>${currentTemperature}</strong></div>
+        <div><span>Exposure level</span><strong class="worker-map-popup__risk worker-map-popup__risk--${tone}">${risk}</strong></div>
+        <div><span>Last check-in</span><strong>${escapeHtml(worker.lastCheckIn || '—')}</strong></div>
+        <div><span>Current task</span><strong>${escapeHtml(worker.task || 'Not set')}</strong></div>
+      </div>
+      <div class="worker-map-popup__recommendation">
+        <span>Recommendation</span>
+        <strong>${escapeHtml(workerRecommendation(worker))}</strong>
+      </div>
+      <div class="worker-map-popup__actions">
+        <button type="button" data-action="view">View Worker</button>
+        <button type="button" class="primary" data-action="adjust">Adjust Assignment</button>
+      </div>
+    </div>
+  `
+}
+
 function MapFallback({ site, workers }: Pick<SiteMapProps, 'site' | 'workers'>) {
   const points = site.polygon.length > 0 ? site.polygon : [site.center]
   const latitudes = points.map((point) => point.lat)
@@ -118,8 +164,12 @@ export function SiteMap({ site, workers, temperatureC, weatherLabel }: SiteMapPr
   const mapRef = useRef<google.maps.Map | null>(null)
   const draftPolygonRef = useRef<google.maps.Polygon | null>(null)
   const draftMarkersRef = useRef<google.maps.Marker[]>([])
-  const thermalPolygonsRef = useRef<google.maps.Polygon[]>([])
-  const thermalInfoWindowsRef = useRef<google.maps.InfoWindow[]>([])
+  const thermalOverlayRef = useRef<google.maps.OverlayView | null>(null)
+  const thermalClickListenerRef = useRef<google.maps.MapsEventListener | null>(null)
+  const thermalInfoWindowRef = useRef<google.maps.InfoWindow | null>(null)
+  const workerInfoWindowRef = useRef<google.maps.InfoWindow | null>(null)
+  const thermalRef = useRef<ThermalMapResponse | null>(null)
+  const temperatureRef = useRef<number | null | undefined>(temperatureC)
   const [mapError, setMapError] = useState<string | null>(null)
   const [mapType, setMapType] = useState<'satellite' | 'roadmap'>('satellite')
   const [mapVersion, setMapVersion] = useState(0)
@@ -133,10 +183,14 @@ export function SiteMap({ site, workers, temperatureC, weatherLabel }: SiteMapPr
   const hasMapKey = Boolean(apiKey)
   const boundsCenter = useMemo(() => site.center, [site.center.lat, site.center.lng])
 
+  thermalRef.current = thermal
+  temperatureRef.current = temperatureC
+
   useEffect(() => {
     setThermal(null)
     setSelection([])
     setThermalError(null)
+    workerInfoWindowRef.current?.close()
   }, [site.id])
 
   useEffect(() => {
@@ -144,13 +198,17 @@ export function SiteMap({ site, workers, temperatureC, weatherLabel }: SiteMapPr
     let cancelled = false
     let polygon: google.maps.Polygon | null = null
     const markers: google.maps.Marker[] = []
-    const infoWindows: google.maps.InfoWindow[] = []
 
     loadGoogleMaps(apiKey).then((googleInstance) => {
       if (cancelled || !containerRef.current) return
       const map = new googleInstance.maps.Map(containerRef.current, {
-        center: boundsCenter, zoom: 17, mapTypeId: mapType,
-        disableDefaultUI: true, clickableIcons: false, gestureHandling: 'greedy', backgroundColor: '#e4eaeb',
+        center: boundsCenter,
+        zoom: 17,
+        mapTypeId: mapType,
+        disableDefaultUI: true,
+        clickableIcons: false,
+        gestureHandling: 'greedy',
+        backgroundColor: '#e4eaeb',
       })
       mapRef.current = map
       polygon = new googleInstance.maps.Polygon({
@@ -159,9 +217,10 @@ export function SiteMap({ site, workers, temperatureC, weatherLabel }: SiteMapPr
         strokeOpacity: 1,
         strokeWeight: 3,
         fillColor: '#0b8b87',
-        fillOpacity: thermal?.dataStatus === 'verified' ? 0.08 : 0.28,
+        fillOpacity: 0.12,
         clickable: false,
         map,
+        zIndex: 5,
       })
       const bounds = new googleInstance.maps.LatLngBounds()
       site.polygon.forEach((point) => bounds.extend(point))
@@ -169,24 +228,59 @@ export function SiteMap({ site, workers, temperatureC, weatherLabel }: SiteMapPr
 
       workers.forEach((worker) => {
         const marker = new googleInstance.maps.Marker({
-          position: worker.coordinate, map, title: `${worker.name} — ${worker.risk} risk`, zIndex: 30,
-          icon: { path: googleInstance.maps.SymbolPath.CIRCLE, fillColor: markerColor(worker.risk), fillOpacity: 1, strokeColor: '#ffffff', strokeWeight: 3, scale: 11 },
+          position: worker.coordinate,
+          map,
+          title: `${worker.name} — ${worker.risk} risk`,
+          zIndex: 30,
+          icon: {
+            path: googleInstance.maps.SymbolPath.CIRCLE,
+            fillColor: markerColor(worker.risk),
+            fillOpacity: 1,
+            strokeColor: '#ffffff',
+            strokeWeight: 3,
+            scale: 11,
+          },
         })
-        const info = new googleInstance.maps.InfoWindow({ content: `<strong>${worker.name}</strong><br/>${worker.role}<br/>${worker.location}` })
-        marker.addListener('click', () => info.open({ map, anchor: marker }))
-        markers.push(marker); infoWindows.push(info)
+
+        marker.addListener('click', () => {
+          thermalInfoWindowRef.current?.close()
+          workerInfoWindowRef.current?.close()
+          const activeThermal = thermalRef.current
+          const tile = activeThermal?.dataStatus === 'verified'
+            ? activeThermal.tiles.find((candidate) => pointInPolygon(worker.coordinate, candidate.polygon))
+            : undefined
+          const workerTemperature = tile?.temperatureC ?? temperatureRef.current
+          const info = new googleInstance.maps.InfoWindow({
+            content: workerPopupHtml(worker, workerTemperature),
+            maxWidth: 310,
+            ariaLabel: `${worker.name} exposure details`,
+            pixelOffset: new googleInstance.maps.Size(0, -6),
+          })
+          info.addListener('domready', () => {
+            const popup = document.querySelector(`[data-worker-popup="${worker.id}"]`)
+            popup?.querySelector('[data-action="view"]')?.addEventListener('click', () => {
+              window.location.assign(`/plan?site=${encodeURIComponent(site.id)}&worker=${encodeURIComponent(worker.id)}`)
+            })
+            popup?.querySelector('[data-action="adjust"]')?.addEventListener('click', () => {
+              window.location.assign(`/plan?site=${encodeURIComponent(site.id)}&worker=${encodeURIComponent(worker.id)}&mode=adjust`)
+            })
+          })
+          info.open({ map, anchor: marker })
+          workerInfoWindowRef.current = info
+        })
+        markers.push(marker)
       })
       setMapVersion((value) => value + 1)
     }).catch((error: Error) => { if (!cancelled) setMapError(error.message) })
 
     return () => {
       cancelled = true
+      workerInfoWindowRef.current?.close()
       polygon?.setMap(null)
       markers.forEach((marker) => marker.setMap(null))
-      infoWindows.forEach((info) => info.close())
       mapRef.current = null
     }
-  }, [boundsCenter, hasMapKey, mapType, site.polygon, workers])
+  }, [boundsCenter, hasMapKey, mapType, site.id, site.polygon, workers])
 
   useEffect(() => {
     const map = mapRef.current
@@ -254,46 +348,137 @@ export function SiteMap({ site, workers, temperatureC, weatherLabel }: SiteMapPr
   }, [mapVersion, selection, thermalMode])
 
   useEffect(() => {
-    thermalPolygonsRef.current.forEach((polygon) => polygon.setMap(null))
-    thermalInfoWindowsRef.current.forEach((info) => info.close())
-    thermalPolygonsRef.current = []
-    thermalInfoWindowsRef.current = []
+    thermalClickListenerRef.current?.remove()
+    thermalClickListenerRef.current = null
+    thermalInfoWindowRef.current?.close()
+    thermalInfoWindowRef.current = null
+    thermalOverlayRef.current?.setMap(null)
+    thermalOverlayRef.current = null
 
     const map = mapRef.current
     if (!map || thermal?.dataStatus !== 'verified' || !window.google?.maps) return
     const min = thermal.minTemperatureC ?? 0
     const max = thermal.maxTemperatureC ?? min
+    const tiles = thermal.tiles
+    const sitePolygon = site.polygon
+    const hottestTileId = thermal.hottestTileId
 
-    thermal.tiles.forEach((tile) => {
-      const polygon = new google.maps.Polygon({
-        map,
-        paths: tile.polygon,
-        strokeColor: heatColor(tile.temperatureC, min, max),
-        strokeOpacity: 0.78,
-        strokeWeight: tile.id === thermal.hottestTileId ? 2.4 : 1,
-        fillColor: heatColor(tile.temperatureC, min, max),
-        fillOpacity: 0.58,
-        clickable: true,
-        zIndex: 10,
-      })
-      const label = temperatureBand(tile.temperatureC, min, max)
-      const info = new google.maps.InfoWindow({
-        content: `<div style="min-width:132px"><strong>${tile.temperatureC.toFixed(1)}°C</strong><br/><span>${label}</span><br/><small>FortyGuard thermal cell</small></div>`,
-      })
-      polygon.addListener('click', (event: google.maps.PolyMouseEvent) => {
-        thermalInfoWindowsRef.current.forEach((windowInfo) => windowInfo.close())
-        if (event.latLng) info.setPosition(event.latLng)
+    class ThermalCanvasOverlay extends google.maps.OverlayView {
+      private canvas: HTMLCanvasElement | null = null
+
+      onAdd() {
+        const canvas = document.createElement('canvas')
+        canvas.className = 'thermal-canvas-overlay'
+        canvas.style.position = 'absolute'
+        canvas.style.pointerEvents = 'none'
+        this.canvas = canvas
+        this.getPanes()?.overlayLayer.appendChild(canvas)
+      }
+
+      draw() {
+        const canvas = this.canvas
+        const projection = this.getProjection()
+        const mapBounds = map.getBounds()
+        if (!canvas || !projection || !mapBounds) return
+
+        const northEast = projection.fromLatLngToDivPixel(mapBounds.getNorthEast())
+        const southWest = projection.fromLatLngToDivPixel(mapBounds.getSouthWest())
+        if (!northEast || !southWest) return
+
+        const left = Math.floor(southWest.x)
+        const top = Math.floor(northEast.y)
+        const width = Math.max(1, Math.ceil(northEast.x - southWest.x))
+        const height = Math.max(1, Math.ceil(southWest.y - northEast.y))
+        const dpr = Math.max(1, window.devicePixelRatio || 1)
+
+        canvas.style.left = `${left}px`
+        canvas.style.top = `${top}px`
+        canvas.style.width = `${width}px`
+        canvas.style.height = `${height}px`
+        canvas.width = Math.round(width * dpr)
+        canvas.height = Math.round(height * dpr)
+
+        const context = canvas.getContext('2d')
+        if (!context) return
+        context.setTransform(dpr, 0, 0, dpr, 0, 0)
+        context.clearRect(0, 0, width, height)
+
+        const project = (point: Coordinate) => {
+          const pixel = projection.fromLatLngToDivPixel(new google.maps.LatLng(point.lat, point.lng))
+          return pixel ? { x: pixel.x - left, y: pixel.y - top } : null
+        }
+
+        context.save()
+        context.beginPath()
+        sitePolygon.forEach((point, index) => {
+          const pixel = project(point)
+          if (!pixel) return
+          if (index === 0) context.moveTo(pixel.x, pixel.y)
+          else context.lineTo(pixel.x, pixel.y)
+        })
+        context.closePath()
+        context.clip()
+
+        tiles.forEach((tile) => {
+          const points = tile.polygon.map(project).filter((point): point is { x: number; y: number } => Boolean(point))
+          if (points.length < 3) return
+          context.beginPath()
+          points.forEach((point, index) => {
+            if (index === 0) context.moveTo(point.x, point.y)
+            else context.lineTo(point.x, point.y)
+          })
+          context.closePath()
+          context.globalAlpha = 0.58
+          context.fillStyle = heatColor(tile.temperatureC, min, max)
+          context.fill()
+          context.globalAlpha = 0.8
+          context.strokeStyle = heatColor(tile.temperatureC, min, max)
+          context.lineWidth = tile.id === hottestTileId ? 2.4 : 1
+          context.stroke()
+        })
+        context.restore()
+        context.globalAlpha = 1
+      }
+
+      onRemove() {
+        this.canvas?.remove()
+        this.canvas = null
+      }
+    }
+
+    const overlay = new ThermalCanvasOverlay()
+    overlay.setMap(map)
+    thermalOverlayRef.current = overlay
+
+    if (thermalMode !== 'custom') {
+      thermalClickListenerRef.current = map.addListener('click', (event: google.maps.MapMouseEvent) => {
+        if (!event.latLng) return
+        const point = { lat: event.latLng.lat(), lng: event.latLng.lng() }
+        if (!pointInPolygon(point, sitePolygon)) return
+        const tile = tiles.find((candidate) => pointInPolygon(point, candidate.polygon))
+        if (!tile) return
+
+        workerInfoWindowRef.current?.close()
+        thermalInfoWindowRef.current?.close()
+        const info = new google.maps.InfoWindow({
+          content: `<div class="thermal-cell-popup"><strong>${tile.temperatureC.toFixed(1)}°C</strong><span>${temperatureBand(tile.temperatureC, min, max)}</span><small>FortyGuard thermal cell • clipped to site boundary</small></div>`,
+          position: event.latLng,
+          maxWidth: 210,
+        })
         info.open({ map })
+        thermalInfoWindowRef.current = info
       })
-      thermalPolygonsRef.current.push(polygon)
-      thermalInfoWindowsRef.current.push(info)
-    })
+    }
 
     return () => {
-      thermalPolygonsRef.current.forEach((polygon) => polygon.setMap(null))
-      thermalInfoWindowsRef.current.forEach((info) => info.close())
+      thermalClickListenerRef.current?.remove()
+      thermalClickListenerRef.current = null
+      thermalInfoWindowRef.current?.close()
+      thermalInfoWindowRef.current = null
+      overlay.setMap(null)
+      thermalOverlayRef.current = null
     }
-  }, [mapVersion, thermal])
+  }, [mapVersion, site.polygon, thermal, thermalMode])
 
   const zoom = (delta: number) => mapRef.current?.setZoom((mapRef.current.getZoom() ?? 17) + delta)
   const recenter = () => { mapRef.current?.panTo(site.center); mapRef.current?.setZoom(17) }
@@ -423,7 +608,10 @@ export function SiteMap({ site, workers, temperatureC, weatherLabel }: SiteMapPr
       )}
 
       <div className="site-map-card__controls" aria-label="Map controls">
-        <button type="button" onClick={() => zoom(1)} aria-label="Zoom in"><Plus size={18} /></button><button type="button" onClick={() => zoom(-1)} aria-label="Zoom out"><Minus size={18} /></button><button type="button" onClick={recenter} aria-label="Recenter map"><LocateFixed size={18} /></button><button type="button" onClick={toggleLayers} aria-label="Toggle map layer"><Layers3 size={18} /></button>
+        <button type="button" onClick={() => zoom(1)} aria-label="Zoom in"><Plus size={18} /></button>
+        <button type="button" onClick={() => zoom(-1)} aria-label="Zoom out"><Minus size={18} /></button>
+        <button type="button" onClick={recenter} aria-label="Recenter map"><LocateFixed size={18} /></button>
+        <button type="button" onClick={toggleLayers} aria-label="Toggle map layer"><Layers3 size={18} /></button>
         {(thermal || selection.length > 0) && <button type="button" onClick={clearThermal} aria-label="Clear thermal layer" title="Clear thermal layer"><RotateCcw size={17} /></button>}
       </div>
       {!workers.length && <div className="site-map-worker-empty">0 workers assigned to this site</div>}
