@@ -60,6 +60,7 @@ jobs:
           site_response = client.post('/api/sites', json=site_payload)
           assert site_response.status_code == 201, site_response.text
           site = site_response.json()
+          assert site['profile']['siteType'] == 'other'
 
           intelligence = client.get(f"/api/sites/{site['id']}/intelligence")
           assert intelligence.status_code == 200, intelligence.text
@@ -116,12 +117,40 @@ jobs:
                   'name': 'Approved Roof Zone',
                   'type': 'roof',
                   'center': {'lat': 25.2048, 'lng': 55.2708},
+                  'polygon': [
+                      {'lat': 25.20455, 'lng': 55.27045},
+                      {'lat': 25.20495, 'lng': 55.27045},
+                      {'lat': 25.20485, 'lng': 55.27095},
+                  ],
                   'allowedTasks': ['Roof installation'],
                   'operationalApproved': True,
               },
           )
           assert zone_response.status_code == 201, zone_response.text
           assert len(zone_response.json()['zones']) == 1
+          assert len(zone_response.json()['zones'][0]['polygon']) == 3
+
+          update_response = client.put(
+              f"/api/sites/{site['id']}",
+              json={
+                  'name': 'CI Work Site Updated',
+                  'address': 'Test work area',
+                  'center': {'lat': 25.2048, 'lng': 55.2708},
+                  'polygon': site_payload['polygon'],
+                  'status': 'active',
+                  'profile': {
+                      'siteType': 'construction',
+                      'surfaceType': 'concrete',
+                      'shadeAvailability': 'limited',
+                      'waterStations': 2,
+                      'recoveryAreas': 1,
+                      'typicalTasks': ['Roof installation'],
+                  },
+              },
+          )
+          assert update_response.status_code == 200, update_response.text
+          assert update_response.json()['name'] == 'CI Work Site Updated'
+          assert update_response.json()['profile']['waterStations'] == 2
 
           planner = client.post(
               f"/api/sites/{site['id']}/operational-planner",
@@ -147,5 +176,5 @@ jobs:
           )
           assert verification.status_code == 200, verification.text
           assert verification.json()['status'] == 'verification_unavailable'
-          print('HeatShield setup, historical behavior and operational planner smoke test passed')
+          print('HeatShield setup, site editing, polygon zones, historical behavior and planner smoke test passed')
           PY
