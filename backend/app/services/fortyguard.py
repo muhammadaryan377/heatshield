@@ -11,7 +11,7 @@ import httpx
 from timezonefinder import TimezoneFinder
 
 from app.core.config import Settings
-from app.schemas import Site
+from app.schemas import Coordinate, Site
 
 
 class FortyGuardConfigurationError(RuntimeError):
@@ -167,8 +167,8 @@ class FortyGuardClient:
 
     @staticmethod
     def _point_in_ring(longitude: float, latitude: float, ring: list[list[Any]]) -> bool:
-        # Treat a point on a tile edge as contained. Heatmap tiles commonly share
-        # their boundaries, and the ray-casting test alone excludes some edges.
+        # Treat a point on a tile/site edge as contained. Heatmap tiles commonly
+        # share boundaries, and the ray-casting test alone excludes some edges.
         epsilon = 1e-10
         for index, position in enumerate(ring):
             previous = ring[index - 1]
@@ -203,6 +203,59 @@ class FortyGuardClient:
                 inside = not inside
             j = i
         return inside
+
+    @classmethod
+    def _analysis_coordinate(cls, site: Site) -> Coordinate:
+        """Choose a provider sampling point guaranteed to be inside the saved AOI.
+
+        The UI stores a convenient display center, but a simple vertex average can
+        fall outside a concave polygon. FortyGuard TCM may still return valid cells
+        in that case while a center-only lookup fails. We therefore trust the saved
+        center only when it is inside the boundary, then derive a safe in-polygon
+        point deterministically when needed.
+        """
+        if len(site.polygon) < 3:
+            raise FortyGuardAPIError('Site polygon needs at least three points.')
+
+        ring = [[point.lng, point.lat] for point in site.polygon]
+        if ring[0] != ring[-1]:
+            ring.append(ring[0])
+
+        if cls._point_in_ring(site.center.lng, site.center.lat, ring):
+            return site.center
+
+        average = Coordinate(
+            lat=sum(point.lat for point in site.polygon) / len(site.polygon),
+            lng=sum(point.lng for point in site.polygon) / len(site.polygon),
+        )
+        if cls._point_in_ring(average.lng, average.lat, ring):
+            return average
+
+        # Edge midpoints are guaranteed to be on the saved boundary, and our
+        # containment contract treats boundary points as inside. Prefer a midpoint
+        # near the polygon's bounding-box center so the environmental sample is not
+        # biased toward an arbitrary first vertex.
+        min_lat = min(point.lat for point in site.polygon)
+        max_lat = max(point.lat for point in site.polygon)
+        min_lng = min(point.lng for point in site.polygon)
+        max_lng = max(point.lng for point in site.polygon)
+        bbox_center = Coordinate(lat=(min_lat + max_lat) / 2, lng=(min_lng + max_lng) / 2)
+
+        candidates: list[Coordinate] = []
+        for index, point in enumerate(site.polygon):
+            previous = site.polygon[index - 1]
+            candidates.append(Coordinate(
+                lat=(point.lat + previous.lat) / 2,
+                lng=(point.lng + previous.lng) / 2,
+            ))
+        candidates.sort(key=lambda point: (point.lat - bbox_center.lat) ** 2 + (point.lng - bbox_center.lng) ** 2)
+        for candidate in candidates:
+            if cls._point_in_ring(candidate.lng, candidate.lat, ring):
+                return candidate
+
+        # This should be unreachable for a valid polygon, but keep the failure
+        # explicit rather than sending a coordinate outside the FortyGuard AOI.
+        raise FortyGuardAPIError('HeatShield could not derive an in-boundary FortyGuard sampling coordinate.')
 
     @classmethod
     def _geometry_contains_point(cls, geometry: dict[str, Any], longitude: float, latitude: float) -> bool:
@@ -246,6 +299,7 @@ class FortyGuardClient:
                 'FortyGuard completed the heatmap request but returned zero temperature tiles.'
             )
 
+        analysis_coordinate = cls._analysis_coordinate(site)
         for feature in features:
             if not isinstance(feature, dict):
                 continue
@@ -256,10 +310,10 @@ class FortyGuardClient:
             value = cls._temperature_value(properties)
             if value is None:
                 continue
-            if cls._geometry_contains_point(geometry, site.center.lng, site.center.lat):
+            if cls._geometry_contains_point(geometry, analysis_coordinate.lng, analysis_coordinate.lat):
                 return value, feature
 
-        raise FortyGuardAPIError('No containing FortyGuard temperature tile was found for this site.')
+        raise FortyGuardAPIError('No containing FortyGuard temperature tile was found inside this site AOI.')
 
     @staticmethod
     def _number_at(value: Any, index: int = 0) -> float | None:
@@ -298,9 +352,13 @@ class FortyGuardClient:
             'filter_type': 1,
         }
 
-    @staticmethod
-    def _site_timezone(site: Site) -> tuple[str, ZoneInfo]:
-        timezone_name = _timezone_finder().timezone_at(lng=site.center.lng, lat=site.center.lat)
+    @classmethod
+    def _site_timezone(cls, site: Site) -> tuple[str, ZoneInfo]:
+        analysis_coordinate = cls._analysis_coordinate(site)
+        timezone_name = _timezone_finder().timezone_at(
+            lng=analysis_coordinate.lng,
+            lat=analysis_coordinate.lat,
+        )
         if not timezone_name:
             return 'UTC', ZoneInfo('UTC')
         try:
@@ -347,6 +405,7 @@ class FortyGuardClient:
         if cached is not None:
             return cached
 
+        analysis_coordinate = self._analysis_coordinate(site)
         timezone_name, candidates = self._candidate_local_hours(site, request_now)
         polygon_aoi = self._geojson_polygon(site)
         attempted_activity_ids: list[str] = []
@@ -388,8 +447,8 @@ class FortyGuardClient:
 
         matched_date_time = self._date_time(selected_candidate)
         environment_payload = {
-            'latitude': site.center.lat,
-            'longitude': site.center.lng,
+            'latitude': analysis_coordinate.lat,
+            'longitude': analysis_coordinate.lng,
             'temperature': temperature,
             'date_time': matched_date_time,
         }
@@ -417,6 +476,10 @@ class FortyGuardClient:
                 'requested_date_time': matched_date_time,
                 'site_timezone': timezone_name,
                 'source_age_hours': source_age_hours,
+                'analysis_coordinate': {
+                    'lat': analysis_coordinate.lat,
+                    'lng': analysis_coordinate.lng,
+                },
                 'heatmap_feature_count': feature_count,
                 'heatmap_stats': selected_result.get('stats_data'),
                 'selected_heatmap_feature': selected_feature,
