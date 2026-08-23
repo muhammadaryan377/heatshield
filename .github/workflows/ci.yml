@@ -33,7 +33,9 @@ jobs:
           cache: pip
           cache-dependency-path: backend/requirements.txt
       - run: pip install -r requirements.txt
+      - run: pip install pytest
       - run: python -m compileall app
+      - run: pytest -q
       - name: Smoke test real setup flow
         env:
           DATABASE_PATH: /tmp/heatshield-ci.db
@@ -46,14 +48,18 @@ jobs:
           client = TestClient(app)
           assert client.get('/api/sites').json() == []
 
+          # Keep CI on the same US operating model as production. These are
+          # unambiguous downtown Phoenix, Arizona coordinates, matching the
+          # controlled FortyGuard contract probe used during integration.
           site_payload = {
-              'name': 'CI Work Site',
-              'address': 'Test work area',
-              'center': {'lat': 25.2048, 'lng': 55.2708},
+              'name': 'CI Phoenix Work Site',
+              'address': 'Phoenix, AZ, USA',
+              'center': {'lat': 33.44975, 'lng': -112.0735},
               'polygon': [
-                  {'lat': 25.2040, 'lng': 55.2700},
-                  {'lat': 25.2054, 'lng': 55.2701},
-                  {'lat': 25.2050, 'lng': 55.2715},
+                  {'lat': 33.4440, 'lng': -112.0805},
+                  {'lat': 33.4440, 'lng': -112.0665},
+                  {'lat': 33.4555, 'lng': -112.0665},
+                  {'lat': 33.4555, 'lng': -112.0805},
               ],
               'zones': [],
           }
@@ -99,7 +105,7 @@ jobs:
               'role': 'Roofer',
               'location': 'Roof Area',
               'locationId': 'roof-area',
-              'coordinate': {'lat': 25.2048, 'lng': 55.2708},
+              'coordinate': {'lat': 33.44975, 'lng': -112.0735},
               'task': 'Roof installation',
               'workIntensity': 'heavy',
               'sunExposure': 'direct',
@@ -116,11 +122,11 @@ jobs:
               json={
                   'name': 'Approved Roof Zone',
                   'type': 'roof',
-                  'center': {'lat': 25.2048, 'lng': 55.2708},
+                  'center': {'lat': 33.44975, 'lng': -112.0735},
                   'polygon': [
-                      {'lat': 25.20455, 'lng': 55.27045},
-                      {'lat': 25.20495, 'lng': 55.27045},
-                      {'lat': 25.20485, 'lng': 55.27095},
+                      {'lat': 33.4488, 'lng': -112.0746},
+                      {'lat': 33.4503, 'lng': -112.0745},
+                      {'lat': 33.4498, 'lng': -112.0725},
                   ],
                   'allowedTasks': ['Roof installation'],
                   'operationalApproved': True,
@@ -133,9 +139,9 @@ jobs:
           update_response = client.put(
               f"/api/sites/{site['id']}",
               json={
-                  'name': 'CI Work Site Updated',
-                  'address': 'Test work area',
-                  'center': {'lat': 25.2048, 'lng': 55.2708},
+                  'name': 'CI Phoenix Work Site Updated',
+                  'address': 'Phoenix, AZ, USA',
+                  'center': {'lat': 33.44975, 'lng': -112.0735},
                   'polygon': site_payload['polygon'],
                   'status': 'active',
                   'profile': {
@@ -149,7 +155,7 @@ jobs:
               },
           )
           assert update_response.status_code == 200, update_response.text
-          assert update_response.json()['name'] == 'CI Work Site Updated'
+          assert update_response.json()['name'] == 'CI Phoenix Work Site Updated'
           assert update_response.json()['profile']['waterStations'] == 2
 
           planner = client.post(
@@ -176,5 +182,5 @@ jobs:
           )
           assert verification.status_code == 200, verification.text
           assert verification.json()['status'] == 'verification_unavailable'
-          print('HeatShield setup, site editing, polygon zones, historical behavior and planner smoke test passed')
+          print('HeatShield US setup, site editing, polygon zones, historical behavior and planner smoke test passed')
           PY
