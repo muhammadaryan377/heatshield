@@ -15,6 +15,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { api } from '../../lib/api'
 import { loadGoogleMaps } from '../../lib/googleMaps'
 import type { Coordinate, Site, ThermalMapResponse, Worker } from '../../types/site'
+import './SiteMapOverlay.css'
 
 interface SiteMapProps {
   site: Site
@@ -28,9 +29,36 @@ type Granularity = 60 | 80 | 100
 const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY ?? ''
 
 function markerColor(risk: Worker['risk']) {
-  if (risk === 'high' || risk === 'extreme') return '#f38a22'
-  if (risk === 'medium') return '#e7b028'
-  return '#1ca79d'
+  if (risk === 'high' || risk === 'extreme') return '#ef6a47'
+  if (risk === 'medium') return '#e7a51a'
+  return '#0b8b87'
+}
+
+function workerMarkerSvg(worker: Worker) {
+  const fill = markerColor(worker.risk)
+  const initials = escapeHtml((worker.initials || worker.name.slice(0, 1) || 'W').slice(0, 2).toUpperCase())
+  const alert = worker.risk === 'high' || worker.risk === 'extreme' ? '#ef4f45' : worker.risk === 'medium' ? '#f2a51f' : '#19a56d'
+
+  return `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(`
+    <svg width="48" height="58" viewBox="0 0 48 58" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <filter id="s" x="0" y="0" width="48" height="58" filterUnits="userSpaceOnUse">
+          <feDropShadow dx="0" dy="4" stdDeviation="3.5" flood-color="#102d33" flood-opacity="0.28"/>
+        </filter>
+      </defs>
+      <g filter="url(#s)">
+        <path d="M24 53C24 53 42 38.2 42 23.2C42 13.15 33.94 5 24 5C14.06 5 6 13.15 6 23.2C6 38.2 24 53 24 53Z" fill="white"/>
+        <path d="M24 49C24 49 38.2 36.3 38.2 23.4C38.2 15.35 31.84 8.8 24 8.8C16.16 8.8 9.8 15.35 9.8 23.4C9.8 36.3 24 49 24 49Z" fill="${fill}"/>
+        <circle cx="24" cy="22.2" r="9.8" fill="white" fill-opacity="0.16"/>
+        <circle cx="24" cy="18.9" r="3.45" fill="white"/>
+        <path d="M17.8 28.4C18.55 24.85 20.6 23.15 24 23.15C27.4 23.15 29.45 24.85 30.2 28.4" stroke="white" stroke-width="2.6" stroke-linecap="round"/>
+        <rect x="15.2" y="31.7" width="17.6" height="8.2" rx="4.1" fill="white" fill-opacity="0.96"/>
+        <text x="24" y="37.25" text-anchor="middle" font-family="Arial, sans-serif" font-size="6.5" font-weight="700" fill="${fill}">${initials}</text>
+        <circle cx="36.4" cy="11.6" r="5.2" fill="white"/>
+        <circle cx="36.4" cy="11.6" r="3.5" fill="${alert}"/>
+      </g>
+    </svg>
+  `)}`
 }
 
 function pointOnSegment(point: Coordinate, a: Coordinate, b: Coordinate) {
@@ -75,11 +103,11 @@ function heatColor(value: number, min: number, max: number) {
 function temperatureBand(value: number, min: number, max: number) {
   const span = Math.max(max - min, 0.01)
   const ratio = (value - min) / span
-  if (ratio >= 0.8) return 'Hottest zone'
-  if (ratio >= 0.6) return 'Hot zone'
-  if (ratio >= 0.4) return 'Moderate zone'
-  if (ratio >= 0.2) return 'Cooler zone'
-  return 'Coolest zone'
+  if (ratio >= 0.8) return 'Warmest relative zone'
+  if (ratio >= 0.6) return 'Warmer relative zone'
+  if (ratio >= 0.4) return 'Mid-range zone'
+  if (ratio >= 0.2) return 'Cooler relative zone'
+  return 'Coolest relative zone'
 }
 
 function observedLabel(value?: string | null) {
@@ -114,7 +142,7 @@ function workerPopupHtml(worker: Worker, currentCellTemperature?: number | null)
   return `
     <div class="worker-map-popup" data-worker-popup="${escapeHtml(worker.id)}">
       <div class="worker-map-popup__header">
-        <span class="worker-map-popup__avatar">${escapeHtml(worker.initials || worker.name.slice(0, 1).toUpperCase())}</span>
+        <span class="worker-map-popup__avatar"><span>${escapeHtml((worker.initials || worker.name.slice(0, 1)).slice(0, 2).toUpperCase())}</span></span>
         <span><strong>${escapeHtml(worker.name)}</strong><small>${escapeHtml(worker.role)} • ${escapeHtml(worker.location)}</small></span>
       </div>
       <div class="worker-map-popup__metrics">
@@ -133,6 +161,26 @@ function workerPopupHtml(worker: Worker, currentCellTemperature?: number | null)
       </div>
     </div>
   `
+}
+
+function keepPopupInsideMap(map: google.maps.Map, popup: Element) {
+  const mapDiv = map.getDiv()
+  const shell = popup.closest('.gm-style-iw-t') ?? popup.closest('.gm-style-iw-c') ?? popup
+  const mapRect = mapDiv.getBoundingClientRect()
+  const popupRect = shell.getBoundingClientRect()
+  const sideInset = 18
+  const topInset = 112
+  const bottomInset = 22
+  let dx = 0
+  let dy = 0
+
+  if (popupRect.left < mapRect.left + sideInset) dx = popupRect.left - (mapRect.left + sideInset)
+  else if (popupRect.right > mapRect.right - sideInset) dx = popupRect.right - (mapRect.right - sideInset)
+
+  if (popupRect.top < mapRect.top + topInset) dy = popupRect.top - (mapRect.top + topInset)
+  else if (popupRect.bottom > mapRect.bottom - bottomInset) dy = popupRect.bottom - (mapRect.bottom - bottomInset)
+
+  if (Math.abs(dx) > 1 || Math.abs(dy) > 1) map.panBy(dx, dy)
 }
 
 function MapFallback({ site, workers }: Pick<SiteMapProps, 'site' | 'workers'>) {
@@ -232,13 +280,11 @@ export function SiteMap({ site, workers, temperatureC, weatherLabel }: SiteMapPr
           map,
           title: `${worker.name} — ${worker.risk} risk`,
           zIndex: 30,
+          optimized: false,
           icon: {
-            path: googleInstance.maps.SymbolPath.CIRCLE,
-            fillColor: markerColor(worker.risk),
-            fillOpacity: 1,
-            strokeColor: '#ffffff',
-            strokeWeight: 3,
-            scale: 11,
+            url: workerMarkerSvg(worker),
+            scaledSize: new googleInstance.maps.Size(48, 58),
+            anchor: new googleInstance.maps.Point(24, 52),
           },
         })
 
@@ -252,20 +298,27 @@ export function SiteMap({ site, workers, temperatureC, weatherLabel }: SiteMapPr
           const workerTemperature = tile?.temperatureC ?? temperatureRef.current
           const info = new googleInstance.maps.InfoWindow({
             content: workerPopupHtml(worker, workerTemperature),
-            maxWidth: 310,
+            maxWidth: 292,
             ariaLabel: `${worker.name} exposure details`,
-            pixelOffset: new googleInstance.maps.Size(0, -6),
+            pixelOffset: new googleInstance.maps.Size(0, -10),
           })
           info.addListener('domready', () => {
             const popup = document.querySelector(`[data-worker-popup="${worker.id}"]`)
-            popup?.querySelector('[data-action="view"]')?.addEventListener('click', () => {
+            if (!popup) return
+
+            popup.querySelector('[data-action="view"]')?.addEventListener('click', () => {
               window.location.assign(`/plan?site=${encodeURIComponent(site.id)}&worker=${encodeURIComponent(worker.id)}`)
             })
-            popup?.querySelector('[data-action="adjust"]')?.addEventListener('click', () => {
+            popup.querySelector('[data-action="adjust"]')?.addEventListener('click', () => {
               window.location.assign(`/plan?site=${encodeURIComponent(site.id)}&worker=${encodeURIComponent(worker.id)}&mode=adjust`)
             })
+
+            requestAnimationFrame(() => {
+              keepPopupInsideMap(map, popup)
+              window.setTimeout(() => keepPopupInsideMap(map, popup), 120)
+            })
           })
-          info.open({ map, anchor: marker })
+          info.open({ map, anchor: marker, shouldFocus: false })
           workerInfoWindowRef.current = info
         })
         markers.push(marker)
@@ -589,7 +642,7 @@ export function SiteMap({ site, workers, temperatureC, weatherLabel }: SiteMapPr
             <div className="thermal-summary">
               <div><span>Coolest</span><strong>{thermal.minTemperatureC?.toFixed(1)}°C</strong></div>
               <div><span>Mean</span><strong>{thermal.meanTemperatureC?.toFixed(1)}°C</strong></div>
-              <div><span>Hottest</span><strong>{thermal.maxTemperatureC?.toFixed(1)}°C</strong></div>
+              <div><span>Warmest</span><strong>{thermal.maxTemperatureC?.toFixed(1)}°C</strong></div>
               <p>{thermal.tileCount} verified cells · {thermal.granularityMeters} m · {thermal.cached ? 'cached result' : observedLabel(thermal.observedAt)}</p>
             </div>
           )}
@@ -602,7 +655,7 @@ export function SiteMap({ site, workers, temperatureC, weatherLabel }: SiteMapPr
 
       {thermal?.dataStatus === 'verified' && (
         <div className="thermal-legend">
-          <span>Cooler</span><i className="thermal-legend__scale" /><span>Hotter</span>
+          <span>Cooler</span><i className="thermal-legend__scale" /><span>Warmer</span>
           <strong>{thermal.minTemperatureC?.toFixed(1)}°C — {thermal.maxTemperatureC?.toFixed(1)}°C</strong>
         </div>
       )}
