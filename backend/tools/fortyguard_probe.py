@@ -81,8 +81,11 @@ def summarize_heatmap_result(result: dict[str, Any], analytic_type: str) -> dict
         sample_geometry_type = geometry.get("type") if isinstance(geometry.get("type"), str) else None
 
     values: list[float] = []
+    peak_values: list[float] = []
     if analytic_type == "tcm":
-        candidate_keys = ("max_temperature", "average_temperature", "temperature", "value")
+        # FortyGuard single-day TCM separates average_temperature from
+        # max_temperature. Keep those semantics distinct in the probe report.
+        candidate_keys = ("average_temperature", "temperature", "value")
         for feature in features:
             if not isinstance(feature, dict):
                 continue
@@ -90,6 +93,9 @@ def summarize_heatmap_result(result: dict[str, Any], analytic_type: str) -> dict
             value = next((number(props.get(key)) for key in candidate_keys if number(props.get(key)) is not None), None)
             if value is not None:
                 values.append(value)
+            peak = number(props.get("max_temperature"))
+            if peak is not None:
+                peak_values.append(peak)
     else:
         for feature in features:
             if not isinstance(feature, dict):
@@ -113,6 +119,10 @@ def summarize_heatmap_result(result: dict[str, Any], analytic_type: str) -> dict
         summary["value_min"] = min(values)
         summary["value_mean"] = sum(values) / len(values)
         summary["value_max"] = max(values)
+    if peak_values:
+        summary["peak_temperature_min"] = min(peak_values)
+        summary["peak_temperature_mean"] = sum(peak_values) / len(peak_values)
+        summary["peak_temperature_max"] = max(peak_values)
     return summary
 
 
@@ -293,10 +303,10 @@ async def run(include_live: bool, full: bool) -> None:
                 )
             )
 
-        # Explicitly probe filter_type=4 because FortyGuard's Create Heatmap page
-        # documents it, while the separate Known Limitations page currently lists
-        # only filter types 1-3. The result tells us what this account/API release
-        # actually accepts before HeatShield relies on it.
+        # Explicit compatibility test. The Create Heatmap documentation supports
+        # filter_type=4 for a range of days, while the separate limitations page
+        # currently lags behind. The live provider result is the source of truth
+        # for this HeatShield account/release.
         report["tests"].append(
             await probe.heatmap(
                 name="phoenix_az_range_days_filter4_compatibility",
@@ -317,9 +327,6 @@ async def run(include_live: bool, full: bool) -> None:
         now_local = now_utc.astimezone(phoenix_tz).replace(minute=0, second=0, microsecond=0)
         utc_hour = now_utc.replace(minute=0, second=0, microsecond=0)
 
-        # Test both interpretations because the docs specify HH:MM but do not
-        # explicitly state whether single-hour input is interpreted as AOI-local
-        # time or UTC. This directly diagnoses live-hour emptiness.
         report["tests"].append(
             await probe.heatmap(
                 name="phoenix_az_live_using_local_clock",
