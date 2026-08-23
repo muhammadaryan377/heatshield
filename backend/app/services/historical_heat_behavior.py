@@ -151,7 +151,8 @@ class HistoricalHeatBehaviorService:
     @staticmethod
     def _resolve_range(site: Site, request: HistoricalHeatBehaviorRequest) -> tuple[date, date, str]:
         timezone_name, site_timezone = FortyGuardClient._site_timezone(site)
-        today = datetime.now(timezone.utc).astimezone(site_timezone).date()
+        local_today = datetime.now(timezone.utc).astimezone(site_timezone).date()
+        last_complete_day = local_today - timedelta(days=1)
         if request.startDate and request.endDate:
             try:
                 start = date.fromisoformat(request.startDate)
@@ -159,16 +160,16 @@ class HistoricalHeatBehaviorService:
             except ValueError as exc:
                 raise ValueError('Historical dates must use YYYY-MM-DD.') from exc
         else:
-            end = today
+            end = last_complete_day
             start = end - timedelta(days=29)
-        if start < date(2021, 1, 1):
-            raise ValueError('FortyGuard historical analysis starts at 2021-01-01.')
-        if end > today:
-            raise ValueError('Historical analysis cannot end in the future for the selected site.')
+        if start < date(2019, 1, 1):
+            raise ValueError('FortyGuard historical analysis starts at 2019-01-01.')
+        if end > last_complete_day:
+            raise ValueError('Historical range analysis must end on a completed day (yesterday or earlier).')
         if start > end:
             raise ValueError('Historical startDate must be on or before endDate.')
-        if (end - start).days + 1 > 90:
-            raise ValueError('Historical analysis is limited to 90 days per run to keep the report focused and credit-aware.')
+        if (end - start).days + 1 > 31:
+            raise ValueError('FortyGuard range-of-days analysis is limited to 31 days per request. Choose 7, 30, or a custom range up to 31 days.')
         return start, end, timezone_name
 
     def _cache_key(self, site_id: str, start: date, end: date, request: HistoricalHeatBehaviorRequest) -> str:
