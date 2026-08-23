@@ -268,7 +268,7 @@ export function CreateSiteModal({ open, onClose, onCreated }: CreateSiteModalPro
         title: result.formatted_address,
       })
 
-      setMapMessage(`USA location confirmed: ${result.formattedAddress ?? result.formatted_address}. Now click the actual work-area corners.`)
+      setMapMessage(`USA location confirmed: ${result.formatted_address}. Now click the actual work-area corners.`)
     })
   }
 
