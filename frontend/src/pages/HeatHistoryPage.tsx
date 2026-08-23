@@ -102,11 +102,20 @@ export function HeatHistoryPage() {
   }, [siteId, setSearchParams])
 
   const selectedSite = sites.find((site) => site.id === siteId) ?? null
+  const selectedSitePolygonReady = Boolean(selectedSite && selectedSite.polygon.length >= 3)
+  const approvedZoneCount = selectedSite?.zones.filter((zone) => zone.operationalApproved).length ?? 0
   const hottestRepeatedZone = useMemo(() => result ? topZone(result.zones, 'exceedanceHours') : null, [result])
   const mostPersistentZone = useMemo(() => result ? topZone(result.zones, 'persistenceHours') : null, [result])
 
   const runAnalysis = async () => {
-    if (!siteId) return
+    if (!siteId || !selectedSite) {
+      setError('Select a saved site before running historical analysis.')
+      return
+    }
+    if (!selectedSitePolygonReady) {
+      setError('This site does not have a complete boundary yet. Open Sites and draw at least three boundary points first.')
+      return
+    }
     if (!Number.isFinite(thresholdF) || thresholdF < -20 || thresholdF > 160) {
       setError('Threshold must be between -20°F and 160°F.')
       return
@@ -155,13 +164,37 @@ export function HeatHistoryPage() {
         pageTitle="Site Heat History"
         pageSubtitle="Understand where heat repeatedly accumulates, how long it persists, and when this site typically peaks."
         showAddSite={false}
+        showSiteSelector={false}
         showObservation={false}
       />
 
       <div className="history-page">
         {loadingSites ? <StatePanel kind="loading" title="Loading heat history" detail="Reading available work sites…" /> : !sites.length ? (
-          <section className="history-empty panel"><History size={30} /><div><h2>Create a site first</h2><p>Historical analysis needs a real site polygon before FortyGuard can evaluate spatial heat behavior.</p></div><button className="button button--primary" onClick={() => navigate('/')}>Create Site</button></section>
+          <section className="history-empty panel"><History size={30} /><div><h2>Create a site first</h2><p>Historical analysis needs a real site polygon before FortyGuard can evaluate spatial heat behavior.</p></div><button className="button button--primary" onClick={() => navigate('/sites')}>Create Site</button></section>
         ) : selectedSite ? <>
+          <section className="history-site-selector panel">
+            <div className="history-site-selector__main">
+              <span className="history-eyebrow">SITE TO ANALYZE</span>
+              <label className="history-site-select-control">
+                <MapPinned size={18} />
+                <select value={siteId ?? ''} onChange={(event) => setSiteId(event.target.value || null)} aria-label="Select site for heat history">
+                  {sites.map((site) => <option key={site.id} value={site.id}>{site.name}</option>)}
+                </select>
+              </label>
+              <p>{selectedSite.address || `${selectedSite.center.lat.toFixed(5)}, ${selectedSite.center.lng.toFixed(5)}`}</p>
+              <small>{approvedZoneCount === 0 ? 'No approved zones yet. Whole-site historical analysis still uses the complete saved site polygon.' : 'Approved zones are optional sub-areas; the full saved site polygon remains the analysis boundary.'}</small>
+            </div>
+            <div className="history-site-selector__meta">
+              <span><strong>{selectedSite.polygon.length}</strong> boundary points</span>
+              <span><strong>{approvedZoneCount}</strong> approved zone{approvedZoneCount === 1 ? '' : 's'}</span>
+              <span className={selectedSitePolygonReady ? 'history-site-ready' : 'history-site-blocked'}>
+                {selectedSitePolygonReady ? <CheckCircle2 size={15} /> : <AlertTriangle size={15} />}
+                {selectedSitePolygonReady ? 'Whole-site polygon ready' : 'Site boundary required'}
+              </span>
+              <button type="button" className="button button--quiet" onClick={() => navigate('/sites')}>Review site boundary</button>
+            </div>
+          </section>
+
           <section className="history-intro panel">
             <div className="history-intro__copy">
               <span className="history-eyebrow">FORTYGUARD HISTORICAL INTELLIGENCE</span>
@@ -169,7 +202,7 @@ export function HeatHistoryPage() {
               <p>Three shared site-wide FortyGuard range analyses compare repeated threshold exceedance, continuous heat persistence and the time each thermal cell usually peaks.</p>
             </div>
             <div className="history-intro__facts">
-              <span><MapPinned size={16} /> {selectedSite.zones.filter((zone) => zone.operationalApproved).length} approved zone{selectedSite.zones.filter((zone) => zone.operationalApproved).length === 1 ? '' : 's'}</span>
+              <span><MapPinned size={16} /> {approvedZoneCount} approved zone{approvedZoneCount === 1 ? '' : 's'}</span>
               <span><ShieldCheck size={16} /> U.S. historical coverage</span>
               <span><Sparkles size={16} /> 3 provider analyses per run</span>
             </div>
@@ -192,14 +225,15 @@ export function HeatHistoryPage() {
             <label className="history-field"><span>Heat threshold</span><div className="history-threshold"><input type="number" min={-20} max={160} step={1} value={thresholdF} onChange={(event) => { setThresholdF(Number(event.target.value)); setResult(null) }} /><strong>°F</strong></div><small>{fahrenheitToC(thresholdF).toFixed(1)}°C sent to FortyGuard</small></label>
             <label className="history-field"><span>Spatial resolution</span><select value={granularity} onChange={(event) => { setGranularity(Number(event.target.value) as 60 | 80 | 100); setResult(null) }}><option value={60}>60 m · detailed</option><option value={80}>80 m · balanced</option><option value={100}>100 m · credit-aware</option></select><small>Same resolution for all 3 layers</small></label>
 
-            <button type="button" className="button button--primary history-run" onClick={() => void runAnalysis()} disabled={loading}>
-              {loading ? <LoaderCircle className="history-spin" size={18} /> : <ThermometerSun size={18} />}
-              {loading ? 'Analyzing FortyGuard history…' : 'Analyze with FortyGuard'}
+            <button type="button" className="button button--primary history-run" onClick={() => void runAnalysis()} disabled={loading || !selectedSitePolygonReady}>
+              {loading ? <LoaderCircle className="history-spin" size={18} /> : selectedSitePolygonReady ? <ThermometerSun size={18} /> : <AlertTriangle size={18} />}
+              {loading ? 'Analyzing FortyGuard history…' : selectedSitePolygonReady ? `Analyze ${selectedSite.name}` : 'Draw site boundary first'}
             </button>
           </section>
 
-          {!result && !loading && <section className="history-ready panel"><History size={28} /><div><strong>Ready for historical analysis</strong><p>Choose the period and threshold, then run FortyGuard once. HeatShield will not fabricate historical cells when provider evidence is unavailable.</p></div></section>}
-          {loading && <section className="history-ready panel"><LoaderCircle className="history-spin" size={28} /><div><strong>Building site heat history</strong><p>Requesting exceedance, persistence and time-of-measure layers, then joining them to your approved operational zones.</p></div></section>}
+          {!result && !loading && selectedSitePolygonReady && <section className="history-ready panel"><History size={28} /><div><strong>Ready for historical analysis</strong><p>{selectedSite.name} is selected. Choose the period and threshold, then run FortyGuard. HeatShield will not fabricate historical cells when provider evidence is unavailable.</p></div></section>}
+          {!selectedSitePolygonReady && <section className="history-ready history-ready--blocked panel"><AlertTriangle size={28} /><div><strong>Site boundary required</strong><p>Historical analysis is site-specific. Open Sites, draw the complete work-area polygon, save it, then return here.</p></div><button className="button button--quiet" type="button" onClick={() => navigate('/sites')}>Open Sites</button></section>}
+          {loading && <section className="history-ready panel"><LoaderCircle className="history-spin" size={28} /><div><strong>Building site heat history</strong><p>Requesting exceedance, persistence and time-of-measure layers for the full saved site polygon, then joining them to approved operational zones when available.</p></div></section>}
 
           {result && result.dataStatus !== 'configuration_required' && result.dataStatus !== 'unavailable' && <>
             <section className="history-result-head panel">
@@ -219,7 +253,7 @@ export function HeatHistoryPage() {
             <div className="history-detail-grid">
               <section className="history-zones panel">
                 <div className="history-section-head"><div><span className="history-eyebrow">APPROVED ZONE RANKING</span><h2>Where heat accumulates</h2></div><span>{result.zones.length} sampled zone{result.zones.length === 1 ? '' : 's'}</span></div>
-                {!result.zones.length ? <div className="history-inline-empty"><MapPinned size={20} /><div><strong>No approved zones to rank</strong><p>Add operational zones on the Sites screen to connect historical cells to named work areas.</p></div></div> : <div className="history-zone-list">
+                {!result.zones.length ? <div className="history-inline-empty"><MapPinned size={20} /><div><strong>No approved zones to rank</strong><p>The whole-site result above is still valid. Add operational zones on the Sites screen only if you want named sub-area comparisons.</p></div></div> : <div className="history-zone-list">
                   {result.zones.map((zone, index) => <article key={zone.zoneId} className="history-zone-row">
                     <span className="history-zone-rank">{index + 1}</span>
                     <div className="history-zone-name"><strong>{zone.zoneName}</strong><small>{zone.zoneType.replace('-', ' ')} · {zone.evidenceStatus}</small></div>
