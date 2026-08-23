@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Response, status
 
 from app.core.config import Settings, get_settings
 from app.historical_models import HistoricalHeatBehaviorRequest, HistoricalHeatBehaviorResponse
@@ -14,7 +14,9 @@ from app.schemas import (
     Site,
     SiteCreate,
     SiteIntelligence,
+    SiteUpdate,
     SiteZoneCreate,
+    SiteZoneUpdate,
     ThermalMapRequest,
     ThermalMapResponse,
     Worker,
@@ -66,7 +68,6 @@ async def health() -> dict[str, str]:
 
 @router.get('/config/status')
 async def config_status(settings: Settings = Depends(get_settings)) -> dict[str, object]:
-    """Return non-secret configuration state for local/product diagnostics."""
     return {
         'fortyguardConfigured': settings.fortyguard_configured,
         'fortyguardBaseUrl': settings.fortyguard_base_url,
@@ -96,12 +97,41 @@ async def get_site(site_id: str, db: HeatShieldStore = Depends(store)) -> Site:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='Site not found')
 
 
+@router.put('/sites/{site_id}', response_model=Site)
+async def update_site(site_id: str, payload: SiteUpdate, db: HeatShieldStore = Depends(store)) -> Site:
+    try:
+        return db.update_site(site_id, payload)
+    except FileNotFoundError:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='Site not found')
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc))
+
+
+@router.delete('/sites/{site_id}', status_code=status.HTTP_204_NO_CONTENT)
+async def delete_site(site_id: str, db: HeatShieldStore = Depends(store)) -> Response:
+    try:
+        db.delete_site(site_id)
+    except FileNotFoundError:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='Site not found')
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
 @router.post('/sites/{site_id}/zones', response_model=Site, status_code=status.HTTP_201_CREATED)
 async def add_site_zone(site_id: str, payload: SiteZoneCreate, db: HeatShieldStore = Depends(store)) -> Site:
     try:
         return db.add_zone(site_id, payload)
     except FileNotFoundError:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='Site not found')
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc))
+
+
+@router.put('/sites/{site_id}/zones/{zone_id}', response_model=Site)
+async def update_site_zone(site_id: str, zone_id: str, payload: SiteZoneUpdate, db: HeatShieldStore = Depends(store)) -> Site:
+    try:
+        return db.update_zone(site_id, zone_id, payload)
+    except FileNotFoundError:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='Site or zone not found')
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc))
 
@@ -133,10 +163,7 @@ async def create_worker(site_id: str, payload: WorkerCreate, db: HeatShieldStore
 
 
 @router.get('/sites/{site_id}/intelligence', response_model=SiteIntelligence)
-async def site_intelligence(
-    site_id: str,
-    svc: SiteIntelligenceService = Depends(intelligence_service),
-) -> SiteIntelligence:
+async def site_intelligence(site_id: str, svc: SiteIntelligenceService = Depends(intelligence_service)) -> SiteIntelligence:
     try:
         return await svc.get(site_id)
     except FileNotFoundError:
@@ -144,11 +171,7 @@ async def site_intelligence(
 
 
 @router.post('/sites/{site_id}/heatmap', response_model=ThermalMapResponse)
-async def generate_thermal_map(
-    site_id: str,
-    payload: ThermalMapRequest,
-    svc: ThermalMapService = Depends(thermal_map_service),
-) -> ThermalMapResponse:
+async def generate_thermal_map(site_id: str, payload: ThermalMapRequest, svc: ThermalMapService = Depends(thermal_map_service)) -> ThermalMapResponse:
     try:
         return await svc.generate(site_id, payload)
     except FileNotFoundError:
@@ -158,12 +181,7 @@ async def generate_thermal_map(
 
 
 @router.post('/sites/{site_id}/fortyguard-profile', response_model=FortyGuardDailyProfile)
-async def generate_fortyguard_profile(
-    site_id: str,
-    payload: FortyGuardProfileRequest,
-    svc: FortyGuardProfileService = Depends(fortyguard_profile_service),
-) -> FortyGuardDailyProfile:
-    """Generate a daily sponsor-data profile without conflating it with live weather."""
+async def generate_fortyguard_profile(site_id: str, payload: FortyGuardProfileRequest, svc: FortyGuardProfileService = Depends(fortyguard_profile_service)) -> FortyGuardDailyProfile:
     try:
         return await svc.generate(site_id, payload)
     except FileNotFoundError:
@@ -173,12 +191,7 @@ async def generate_fortyguard_profile(
 
 
 @router.post('/sites/{site_id}/historical-heat-behavior', response_model=HistoricalHeatBehaviorResponse)
-async def historical_heat_behavior(
-    site_id: str,
-    payload: HistoricalHeatBehaviorRequest,
-    svc: HistoricalHeatBehaviorService = Depends(historical_heat_behavior_service),
-) -> HistoricalHeatBehaviorResponse:
-    """Analyze FortyGuard exceedance, persistence and peak-time behavior over a historical date range."""
+async def historical_heat_behavior(site_id: str, payload: HistoricalHeatBehaviorRequest, svc: HistoricalHeatBehaviorService = Depends(historical_heat_behavior_service)) -> HistoricalHeatBehaviorResponse:
     try:
         return await svc.generate(site_id, payload)
     except FileNotFoundError:
@@ -188,11 +201,7 @@ async def historical_heat_behavior(
 
 
 @router.post('/sites/{site_id}/operational-planner', response_model=OperationalHeatPlan)
-async def operational_planner(
-    site_id: str,
-    payload: OperationalPlannerRequest,
-    svc: OperationalHeatPlannerService = Depends(operational_heat_planner_service),
-) -> OperationalHeatPlan:
+async def operational_planner(site_id: str, payload: OperationalPlannerRequest, svc: OperationalHeatPlannerService = Depends(operational_heat_planner_service)) -> OperationalHeatPlan:
     try:
         return await svc.generate(site_id, payload)
     except FileNotFoundError:
@@ -202,11 +211,7 @@ async def operational_planner(
 
 
 @router.post('/sites/{site_id}/operational-planner/approvals', response_model=OperationalApproval, status_code=status.HTTP_201_CREATED)
-async def approve_operational_decision(
-    site_id: str,
-    payload: OperationalApprovalRequest,
-    svc: OperationalHeatPlannerService = Depends(operational_heat_planner_service),
-) -> OperationalApproval:
+async def approve_operational_decision(site_id: str, payload: OperationalApprovalRequest, svc: OperationalHeatPlannerService = Depends(operational_heat_planner_service)) -> OperationalApproval:
     try:
         return await svc.approve(site_id, payload)
     except FileNotFoundError:
@@ -216,11 +221,7 @@ async def approve_operational_decision(
 
 
 @router.post('/sites/{site_id}/operational-planner/approvals/{approval_id}/verify', response_model=OperationalApproval)
-async def verify_operational_decision(
-    site_id: str,
-    approval_id: str,
-    svc: OperationalHeatPlannerService = Depends(operational_heat_planner_service),
-) -> OperationalApproval:
+async def verify_operational_decision(site_id: str, approval_id: str, svc: OperationalHeatPlannerService = Depends(operational_heat_planner_service)) -> OperationalApproval:
     try:
         return await svc.verify(site_id, approval_id)
     except FileNotFoundError:
@@ -228,10 +229,7 @@ async def verify_operational_decision(
 
 
 @router.post('/sites/{site_id}/plan', response_model=OperationalPlan)
-async def generate_plan(
-    site_id: str,
-    svc: OperationalPlanService = Depends(plan_service),
-) -> OperationalPlan:
+async def generate_plan(site_id: str, svc: OperationalPlanService = Depends(plan_service)) -> OperationalPlan:
     try:
         return await svc.generate(site_id)
     except FileNotFoundError:
@@ -244,12 +242,7 @@ async def hydration_reminder(site_id: str, db: HeatShieldStore = Depends(store))
         workers = db.list_workers(site_id)
     except FileNotFoundError:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='Site not found')
-
     active = [worker for worker in workers if worker.status == 'active']
     if not active:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail='No active workers are assigned to this site.')
-
-    raise HTTPException(
-        status_code=status.HTTP_501_NOT_IMPLEMENTED,
-        detail='Worker notification delivery is not configured yet.',
-    )
+    raise HTTPException(status_code=status.HTTP_501_NOT_IMPLEMENTED, detail='Worker notification delivery is not configured yet.')

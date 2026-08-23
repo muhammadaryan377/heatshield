@@ -6,19 +6,35 @@ export interface Coordinate {
   lng: number
 }
 
+export interface SiteProfile {
+  siteType: 'construction' | 'warehouse' | 'industrial' | 'utilities' | 'logistics' | 'other'
+  operatingStart?: string | null
+  operatingEnd?: string | null
+  surfaceType: 'mixed' | 'asphalt' | 'concrete' | 'roof' | 'soil' | 'other'
+  shadeAvailability: 'good' | 'limited' | 'none' | 'unknown'
+  waterStations: number
+  recoveryAreas: number
+  supervisor?: string | null
+  emergencyPoint?: string | null
+  defaultShift?: string | null
+  typicalTasks: string[]
+}
+
 export interface SiteZone {
   id: string
   name: string
-  type: 'open-yard' | 'roof' | 'staging' | 'other'
+  type: 'open-yard' | 'roof' | 'staging' | 'recovery' | 'restricted' | 'other'
   center: Coordinate
+  polygon: Coordinate[]
   allowedTasks: string[]
   operationalApproved: boolean
 }
 
 export interface SiteZoneCreate {
   name: string
-  type: 'open-yard' | 'roof' | 'staging' | 'other'
+  type: SiteZone['type']
   center: Coordinate
+  polygon: Coordinate[]
   allowedTasks: string[]
   operationalApproved: boolean
 }
@@ -31,6 +47,7 @@ export interface Site {
   polygon: Coordinate[]
   zones: SiteZone[]
   status: 'active' | 'inactive'
+  profile: SiteProfile
 }
 
 export interface SiteCreate {
@@ -39,6 +56,16 @@ export interface SiteCreate {
   center: Coordinate
   polygon: Coordinate[]
   zones?: SiteZone[]
+  profile?: SiteProfile
+}
+
+export interface SiteUpdate {
+  name: string
+  address: string
+  center: Coordinate
+  polygon: Coordinate[]
+  status: Site['status']
+  profile: SiteProfile
 }
 
 export interface Worker {

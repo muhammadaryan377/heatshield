@@ -15,21 +15,60 @@ class Coordinate(CamelModel):
     lng: float
 
 
+def validate_area_polygon(value: list[Coordinate], label: str = 'boundary') -> list[Coordinate]:
+    if len(value) < 3:
+        raise ValueError(f'A {label} needs at least three map points.')
+    if len(value) > 80:
+        raise ValueError(f'A {label} can contain at most 80 map points.')
+    return value
+
+
+class SiteProfile(CamelModel):
+    siteType: Literal['construction', 'warehouse', 'industrial', 'utilities', 'logistics', 'other'] = 'other'
+    operatingStart: str | None = None
+    operatingEnd: str | None = None
+    surfaceType: Literal['mixed', 'asphalt', 'concrete', 'roof', 'soil', 'other'] = 'mixed'
+    shadeAvailability: Literal['good', 'limited', 'none', 'unknown'] = 'unknown'
+    waterStations: int = Field(default=0, ge=0, le=100)
+    recoveryAreas: int = Field(default=0, ge=0, le=50)
+    supervisor: str | None = Field(default=None, max_length=120)
+    emergencyPoint: str | None = Field(default=None, max_length=180)
+    defaultShift: str | None = Field(default=None, max_length=80)
+    typicalTasks: list[str] = Field(default_factory=list, max_length=20)
+
+    @field_validator('typicalTasks')
+    @classmethod
+    def clean_profile_tasks(cls, value: list[str]) -> list[str]:
+        cleaned: list[str] = []
+        for item in value:
+            task = item.strip()
+            if task and task.casefold() not in {entry.casefold() for entry in cleaned}:
+                cleaned.append(task[:120])
+        return cleaned
+
+
 class SiteZone(CamelModel):
     id: str
     name: str
-    type: Literal['open-yard', 'roof', 'staging', 'other'] = 'other'
+    type: Literal['open-yard', 'roof', 'staging', 'recovery', 'restricted', 'other'] = 'other'
     center: Coordinate
+    polygon: list[Coordinate] = Field(default_factory=list)
     allowedTasks: list[str] = Field(default_factory=list)
     operationalApproved: bool = True
 
 
 class SiteZoneCreate(CamelModel):
     name: str = Field(min_length=2, max_length=120)
-    type: Literal['open-yard', 'roof', 'staging', 'other'] = 'other'
+    type: Literal['open-yard', 'roof', 'staging', 'recovery', 'restricted', 'other'] = 'other'
     center: Coordinate
+    polygon: list[Coordinate]
     allowedTasks: list[str] = Field(default_factory=list, max_length=30)
     operationalApproved: bool = True
+
+    @field_validator('polygon')
+    @classmethod
+    def validate_polygon(cls, value: list[Coordinate]) -> list[Coordinate]:
+        return validate_area_polygon(value, 'zone boundary')
 
     @field_validator('allowedTasks')
     @classmethod
@@ -42,6 +81,10 @@ class SiteZoneCreate(CamelModel):
         return cleaned
 
 
+class SiteZoneUpdate(SiteZoneCreate):
+    pass
+
+
 class Site(CamelModel):
     id: str
     name: str
@@ -50,6 +93,7 @@ class Site(CamelModel):
     polygon: list[Coordinate]
     zones: list[SiteZone] = Field(default_factory=list)
     status: Literal['active', 'inactive'] = 'active'
+    profile: SiteProfile = Field(default_factory=SiteProfile)
 
 
 class SiteCreate(CamelModel):
@@ -58,13 +102,26 @@ class SiteCreate(CamelModel):
     center: Coordinate
     polygon: list[Coordinate]
     zones: list[SiteZone] = Field(default_factory=list)
+    profile: SiteProfile = Field(default_factory=SiteProfile)
 
     @field_validator('polygon')
     @classmethod
     def validate_polygon(cls, value: list[Coordinate]) -> list[Coordinate]:
-        if len(value) < 3:
-            raise ValueError('A site boundary needs at least three map points.')
-        return value
+        return validate_area_polygon(value, 'site boundary')
+
+
+class SiteUpdate(CamelModel):
+    name: str = Field(min_length=2, max_length=120)
+    address: str = Field(min_length=2, max_length=220)
+    center: Coordinate
+    polygon: list[Coordinate]
+    status: Literal['active', 'inactive'] = 'active'
+    profile: SiteProfile = Field(default_factory=SiteProfile)
+
+    @field_validator('polygon')
+    @classmethod
+    def validate_polygon(cls, value: list[Coordinate]) -> list[Coordinate]:
+        return validate_area_polygon(value, 'site boundary')
 
 
 class Worker(CamelModel):

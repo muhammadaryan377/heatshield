@@ -1,0 +1,353 @@
+import { Check, LoaderCircle, MapPin, RotateCcw, Save, Search, Undo2, X } from 'lucide-react'
+import { FormEvent, useEffect, useMemo, useRef, useState } from 'react'
+import { loadGoogleMaps } from '../../lib/googleMaps'
+import { siteManagementApi } from '../../lib/siteManagementApi'
+import type { Coordinate, Site, SiteProfile } from '../../types/site'
+
+interface Props {
+  open: boolean
+  site: Site | null
+  onClose: () => void
+  onUpdated: (site: Site) => void
+}
+
+type SearchAnchor = {
+  coordinate: Coordinate
+  formattedAddress: string
+}
+
+const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY ?? ''
+const MAX_DISTANCE_FROM_CONFIRMED_LOCATION_KM = 80
+
+function averageCenter(points: Coordinate[], fallback: Coordinate): Coordinate {
+  if (!points.length) return fallback
+  return {
+    lat: points.reduce((sum, point) => sum + point.lat, 0) / points.length,
+    lng: points.reduce((sum, point) => sum + point.lng, 0) / points.length,
+  }
+}
+
+function distanceKm(a: Coordinate, b: Coordinate) {
+  const radius = 6371
+  const toRad = (value: number) => value * Math.PI / 180
+  const dLat = toRad(b.lat - a.lat)
+  const dLng = toRad(b.lng - a.lng)
+  const lat1 = toRad(a.lat)
+  const lat2 = toRad(b.lat)
+  const value = Math.sin(dLat / 2) ** 2 + Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLng / 2) ** 2
+  return 2 * radius * Math.asin(Math.sqrt(value))
+}
+
+function defaultProfile(site: Site): SiteProfile {
+  return site.profile ?? {
+    siteType: 'other',
+    operatingStart: null,
+    operatingEnd: null,
+    surfaceType: 'mixed',
+    shadeAvailability: 'unknown',
+    waterStations: 0,
+    recoveryAreas: 0,
+    supervisor: null,
+    emergencyPoint: null,
+    defaultShift: null,
+    typicalTasks: [],
+  }
+}
+
+function isUnitedStatesResult(result: google.maps.GeocoderResult) {
+  return result.address_components.some((component) => component.types.includes('country') && component.short_name === 'US')
+}
+
+function isSpecificWorkLocation(result: google.maps.GeocoderResult) {
+  const acceptedTypes = new Set([
+    'street_address', 'premise', 'subpremise', 'postal_code', 'locality',
+    'sublocality', 'sublocality_level_1', 'neighborhood', 'point_of_interest',
+    'establishment', 'route',
+  ])
+  return result.types.some((type) => acceptedTypes.has(type))
+}
+
+export function EditSiteModal({ open, site, onClose, onUpdated }: Props) {
+  const mapNode = useRef<HTMLDivElement>(null)
+  const mapRef = useRef<google.maps.Map | null>(null)
+  const polygonRef = useRef<google.maps.Polygon | null>(null)
+  const markersRef = useRef<google.maps.Marker[]>([])
+  const locationMarkerRef = useRef<google.maps.Marker | null>(null)
+  const listenerRef = useRef<google.maps.MapsEventListener | null>(null)
+  const drawingRef = useRef(false)
+  const searchAnchorRef = useRef<SearchAnchor | null>(null)
+  const locationChangedRef = useRef(false)
+  const [name, setName] = useState('')
+  const [address, setAddress] = useState('')
+  const [status, setStatus] = useState<'active' | 'inactive'>('active')
+  const [points, setPoints] = useState<Coordinate[]>([])
+  const [profile, setProfile] = useState<SiteProfile | null>(null)
+  const [drawing, setDrawing] = useState(false)
+  const [searching, setSearching] = useState(false)
+  const [locationConfirmed, setLocationConfirmed] = useState(false)
+  const [locationChanged, setLocationChanged] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => { drawingRef.current = drawing }, [drawing])
+  useEffect(() => { locationChangedRef.current = locationChanged }, [locationChanged])
+
+  useEffect(() => {
+    if (!site || !open) return
+    setName(site.name)
+    setAddress(site.address)
+    setStatus(site.status)
+    setPoints(site.polygon)
+    setProfile(defaultProfile(site))
+    setDrawing(false)
+    setLocationConfirmed(false)
+    setLocationChanged(false)
+    searchAnchorRef.current = null
+    locationChangedRef.current = false
+    setError(null)
+  }, [open, site])
+
+  const center = useMemo(() => site ? averageCenter(points, site.center) : { lat: 0, lng: 0 }, [points, site])
+
+  useEffect(() => {
+    if (!open || !site || !apiKey || !mapNode.current) return
+    let cancelled = false
+    loadGoogleMaps(apiKey).then((googleInstance) => {
+      if (cancelled || !mapNode.current) return
+      const map = new googleInstance.maps.Map(mapNode.current, {
+        center: site.center,
+        zoom: 17,
+        mapTypeId: 'satellite',
+        disableDefaultUI: true,
+        zoomControl: true,
+        clickableIcons: false,
+        gestureHandling: 'greedy',
+      })
+      mapRef.current = map
+      const bounds = new googleInstance.maps.LatLngBounds()
+      site.polygon.forEach((point) => bounds.extend(point))
+      if (!bounds.isEmpty()) map.fitBounds(bounds, 48)
+      listenerRef.current = map.addListener('click', (event: google.maps.MapMouseEvent) => {
+        if (!drawingRef.current || !event.latLng) return
+        const anchor = searchAnchorRef.current
+        if (locationChangedRef.current && !anchor) {
+          setError('Search and confirm the US work location before drawing a moved or redrawn boundary.')
+          return
+        }
+        const next = { lat: event.latLng.lat(), lng: event.latLng.lng() }
+        if (anchor && distanceKm(anchor.coordinate, next) > MAX_DISTANCE_FROM_CONFIRMED_LOCATION_KM) {
+          setError(`That boundary point is too far from ${anchor.formattedAddress}. Search the correct US location and redraw.`)
+          return
+        }
+        setPoints((current) => current.length >= 80 ? current : [...current, next])
+        setError(null)
+      })
+    }).catch((err: Error) => setError(err.message))
+    return () => {
+      cancelled = true
+      listenerRef.current?.remove()
+      listenerRef.current = null
+      polygonRef.current?.setMap(null)
+      markersRef.current.forEach((marker) => marker.setMap(null))
+      locationMarkerRef.current?.setMap(null)
+      markersRef.current = []
+      searchAnchorRef.current = null
+      mapRef.current = null
+    }
+  }, [open, site])
+
+  useEffect(() => {
+    polygonRef.current?.setMap(null)
+    markersRef.current.forEach((marker) => marker.setMap(null))
+    markersRef.current = []
+    if (!mapRef.current || !window.google?.maps || !points.length) return
+    polygonRef.current = new google.maps.Polygon({
+      map: mapRef.current,
+      paths: points,
+      strokeColor: '#0b8b87',
+      strokeWeight: 3,
+      strokeOpacity: 1,
+      fillColor: '#11a39b',
+      fillOpacity: points.length >= 3 ? 0.18 : 0,
+      clickable: false,
+    })
+    markersRef.current = points.map((point, index) => new google.maps.Marker({
+      map: mapRef.current,
+      position: point,
+      zIndex: 30,
+      title: `Boundary point ${index + 1}`,
+      label: { text: String(index + 1), color: '#ffffff', fontSize: '10px', fontWeight: '700' },
+      icon: { path: google.maps.SymbolPath.CIRCLE, fillColor: '#0b8b87', fillOpacity: 1, strokeColor: '#ffffff', strokeWeight: 2, scale: 9 },
+    }))
+  }, [points])
+
+  if (!open || !site || !profile) return null
+
+  const setProfileField = <K extends keyof SiteProfile>(key: K, value: SiteProfile[K]) => {
+    setProfile((current) => current ? { ...current, [key]: value } : current)
+  }
+
+  const requireLocationConfirmation = (message: string) => {
+    setLocationChanged(true)
+    locationChangedRef.current = true
+    setLocationConfirmed(false)
+    searchAnchorRef.current = null
+    locationMarkerRef.current?.setMap(null)
+    locationMarkerRef.current = null
+    setDrawing(false)
+    setError(message)
+  }
+
+  const beginRedraw = () => {
+    setPoints([])
+    requireLocationConfirmation('Boundary redraw requires a fresh US location confirmation first. Search the site city, ZIP code, or address, then draw the corners.')
+  }
+
+  const toggleDrawing = () => {
+    if (drawing) {
+      setDrawing(false)
+      return
+    }
+    if (locationChanged && !locationConfirmed) {
+      setError('Search and confirm the US work location before drawing the changed boundary.')
+      return
+    }
+    if (!locationChanged) {
+      requireLocationConfirmation('To change the saved boundary, first search and confirm the US work location. This prevents a valid site name from being paired with coordinates from another place.')
+      return
+    }
+    setDrawing(true)
+    setError(null)
+  }
+
+  const changeAddress = (value: string) => {
+    setAddress(value)
+    setLocationChanged(true)
+    locationChangedRef.current = true
+    setLocationConfirmed(false)
+    searchAnchorRef.current = null
+    locationMarkerRef.current?.setMap(null)
+    locationMarkerRef.current = null
+  }
+
+  const findUsLocation = () => {
+    if (!address.trim() || !mapRef.current || !window.google?.maps || searching) return
+    const geocoder = new window.google.maps.Geocoder()
+    setSearching(true)
+    setError(null)
+    geocoder.geocode({ address: address.trim(), componentRestrictions: { country: 'US' } }, (results, geocodeStatus) => {
+      setSearching(false)
+      if (geocodeStatus !== 'OK' || !results?.[0]) {
+        setLocationConfirmed(false)
+        searchAnchorRef.current = null
+        setError('US location not found. Try “Miami, FL”, a ZIP code, or a full US street address.')
+        return
+      }
+      const result = results[0]
+      if (!isUnitedStatesResult(result)) {
+        setLocationConfirmed(false)
+        searchAnchorRef.current = null
+        setError('FortyGuard work sites must resolve to a United States location.')
+        return
+      }
+      if (!isSpecificWorkLocation(result)) {
+        setLocationConfirmed(false)
+        searchAnchorRef.current = null
+        setError('Choose a specific US city, ZIP code, street address, or place. A state/country-only result is too broad for a FortyGuard site AOI.')
+        return
+      }
+      const location = result.geometry.location
+      const anchor: SearchAnchor = {
+        coordinate: { lat: location.lat(), lng: location.lng() },
+        formattedAddress: result.formatted_address,
+      }
+      searchAnchorRef.current = anchor
+      setAddress(result.formatted_address)
+      setPoints([])
+      setDrawing(true)
+      setLocationChanged(true)
+      locationChangedRef.current = true
+      setLocationConfirmed(true)
+      if (result.geometry.viewport) mapRef.current?.fitBounds(result.geometry.viewport, 64)
+      else {
+        mapRef.current?.panTo(location)
+        mapRef.current?.setZoom(18)
+      }
+      if ((mapRef.current?.getZoom() ?? 0) < 15) mapRef.current?.setZoom(17)
+      locationMarkerRef.current?.setMap(null)
+      locationMarkerRef.current = new google.maps.Marker({ map: mapRef.current, position: location, title: result.formatted_address })
+      setError(null)
+    })
+  }
+
+  const submit = async (event: FormEvent) => {
+    event.preventDefault()
+    if (name.trim().length < 2) { setError('Site name must contain at least 2 characters.'); return }
+    if (address.trim().length < 2) { setError('Add a US site address or location label.'); return }
+    if (locationChanged && !locationConfirmed) { setError('Confirm the changed US location before saving. HeatShield will not send an unconfirmed moved boundary to FortyGuard.'); return }
+    if (points.length < 3) { setError('Site boundary needs at least 3 map points.'); return }
+    const anchor = searchAnchorRef.current
+    if (locationChanged && anchor && distanceKm(anchor.coordinate, center) > MAX_DISTANCE_FROM_CONFIRMED_LOCATION_KM) {
+      setError(`The boundary center is too far from ${anchor.formattedAddress}. Search the correct US location and redraw the boundary.`)
+      return
+    }
+    setSaving(true)
+    setError(null)
+    try {
+      const updated = await siteManagementApi.updateSite(site.id, {
+        name: name.trim(),
+        address: address.trim(),
+        status,
+        center,
+        polygon: points,
+        profile,
+      })
+      onUpdated(updated)
+      onClose()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not update this site.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return <div className="modal-backdrop" role="presentation">
+    <section className="site-edit-modal" role="dialog" aria-modal="true" aria-labelledby="edit-site-title">
+      <header className="site-edit-modal__head">
+        <div><span className="eyebrow">USA SITE CONFIGURATION</span><h2 id="edit-site-title">Edit {site.name}</h2><p>Profile-only edits keep the saved boundary. Any address or boundary change must be re-confirmed against a specific US Google Maps result before HeatShield sends that AOI to FortyGuard.</p></div>
+        <button type="button" className="icon-button" onClick={onClose} disabled={saving} aria-label="Close site editor"><X size={20}/></button>
+      </header>
+      <form className="site-edit-modal__body" onSubmit={submit}>
+        <div className="site-edit-form">
+          <div className="site-edit-grid">
+            <label><span>Site name</span><input value={name} onChange={(e) => setName(e.target.value)} /></label>
+            <label><span>Status</span><select value={status} onChange={(e) => setStatus(e.target.value as typeof status)}><option value="active">Active</option><option value="inactive">Inactive</option></select></label>
+            <label className="wide"><span>US address / location</span><div className="field-with-action"><input value={address} onChange={(e) => changeAddress(e.target.value)} placeholder="Miami, FL or US street address"/><button type="button" onClick={findUsLocation} disabled={searching || !address.trim()}>{searching ? <LoaderCircle className="spin" size={16}/> : <Search size={16}/>}</button></div>{locationConfirmed && <small><Check size={13}/> Specific US location confirmed. Draw the new boundary on the map.</small>}{locationChanged && !locationConfirmed && <small>Location/boundary changed · US confirmation required before save.</small>}</label>
+            <label><span>Site type</span><select value={profile.siteType} onChange={(e) => setProfileField('siteType', e.target.value as SiteProfile['siteType'])}><option value="construction">Construction</option><option value="warehouse">Warehouse</option><option value="industrial">Industrial</option><option value="utilities">Utilities</option><option value="logistics">Logistics</option><option value="other">Other</option></select></label>
+            <label><span>Surface</span><select value={profile.surfaceType} onChange={(e) => setProfileField('surfaceType', e.target.value as SiteProfile['surfaceType'])}><option value="mixed">Mixed</option><option value="asphalt">Asphalt</option><option value="concrete">Concrete</option><option value="roof">Roof</option><option value="soil">Soil</option><option value="other">Other</option></select></label>
+            <label><span>Operating start</span><input type="time" value={profile.operatingStart ?? ''} onChange={(e) => setProfileField('operatingStart', e.target.value || null)} /></label>
+            <label><span>Operating end</span><input type="time" value={profile.operatingEnd ?? ''} onChange={(e) => setProfileField('operatingEnd', e.target.value || null)} /></label>
+            <label><span>Shade availability</span><select value={profile.shadeAvailability} onChange={(e) => setProfileField('shadeAvailability', e.target.value as SiteProfile['shadeAvailability'])}><option value="good">Good</option><option value="limited">Limited</option><option value="none">None</option><option value="unknown">Unknown</option></select></label>
+            <label><span>Water stations</span><input type="number" min="0" max="100" value={profile.waterStations} onChange={(e) => setProfileField('waterStations', Math.max(0, Number(e.target.value) || 0))} /></label>
+            <label><span>Recovery areas</span><input type="number" min="0" max="50" value={profile.recoveryAreas} onChange={(e) => setProfileField('recoveryAreas', Math.max(0, Number(e.target.value) || 0))} /></label>
+            <label><span>Supervisor</span><input value={profile.supervisor ?? ''} onChange={(e) => setProfileField('supervisor', e.target.value || null)} placeholder="Supervisor name" /></label>
+            <label className="wide"><span>Emergency point</span><input value={profile.emergencyPoint ?? ''} onChange={(e) => setProfileField('emergencyPoint', e.target.value || null)} placeholder="e.g. North gate first-aid station" /></label>
+            <label className="wide"><span>Typical tasks</span><input value={profile.typicalTasks.join(', ')} onChange={(e) => setProfileField('typicalTasks', e.target.value.split(',').map((item) => item.trim()).filter(Boolean).slice(0, 20))} placeholder="Roof work, loading, inspection" /></label>
+          </div>
+          {error && <div className="form-error">{error}</div>}
+        </div>
+        <div className="site-edit-map-column">
+          <div className="site-edit-map-tools">
+            <div><strong>US site boundary</strong><span>{points.length} point{points.length === 1 ? '' : 's'} · {points.length >= 3 ? `ready · center ${center.lat.toFixed(5)}, ${center.lng.toFixed(5)}` : 'minimum 3'}</span></div>
+            <button type="button" onClick={beginRedraw}><RotateCcw size={15}/> Redraw</button>
+            <button type="button" onClick={() => setPoints((current) => current.slice(0, -1))} disabled={!points.length || locationChanged && !locationConfirmed}><Undo2 size={15}/> Undo</button>
+            <button type="button" onClick={toggleDrawing} className={drawing ? 'active' : ''}><MapPin size={15}/> {drawing ? 'Drawing on' : 'Draw points'}</button>
+          </div>
+          {apiKey ? <div ref={mapNode} className="site-edit-map" /> : <div className="site-edit-map-empty"><MapPin size={26}/><strong>Google Maps key required</strong></div>}
+          <div className="site-edit-map-note"><Check size={15}/> Any moved/redrawn boundary is locked within 80 km of the freshly confirmed US location. Each click is a numbered dot; this exact polygon becomes the FortyGuard AOI.</div>
+        </div>
+        <footer className="site-edit-actions"><button type="button" className="button" onClick={onClose} disabled={saving}>Cancel</button><button type="submit" className="button button--primary" disabled={saving || points.length < 3 || locationChanged && !locationConfirmed}>{saving ? <LoaderCircle className="spin" size={17}/> : <Save size={17}/>} {saving ? 'Saving…' : 'Save Site Changes'}</button></footer>
+      </form>
+    </section>
+  </div>
+}

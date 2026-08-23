@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -61,16 +61,32 @@ def _tile_id(feature: dict[str, Any]) -> str | None:
     return str(value) if value is not None else None
 
 
-def _tcm_temperature(feature: dict[str, Any]) -> float | None:
-    """Read only TCM temperature fields; never reinterpret analysis `value` as °C."""
+def _tcm_average_temperature(feature: dict[str, Any] | None) -> float | None:
+    """Return FortyGuard's average temperature for a TCM tile.
+
+    For a single-hour heatmap average/min/max are normally identical. For a
+    single-day heatmap they are different provider fields, so average_temperature
+    must not be silently replaced by max_temperature.
+    """
+    if not feature:
+        return None
     props = _properties(feature)
-    for key in ('max_temperature', 'average_temperature', 'temperature'):
+    for key in ('average_temperature', 'temperature'):
         parsed = _number(props.get(key))
         if parsed is not None:
             return parsed
-    hourly = [_number(props.get(f'{hour:02d}')) for hour in range(24)]
-    measured = [value for value in hourly if value is not None]
-    return max(measured) if measured else None
+    return None
+
+
+def _tcm_peak_temperature(feature: dict[str, Any] | None) -> float | None:
+    """Return the provider's maximum temperature for a TCM tile."""
+    if not feature:
+        return None
+    props = _properties(feature)
+    parsed = _number(props.get('max_temperature'))
+    if parsed is not None:
+        return parsed
+    return _tcm_average_temperature(feature)
 
 
 def _analysis_value(feature: dict[str, Any] | None) -> float | None:
@@ -164,7 +180,10 @@ def _layer_status(
     features = _features(result)
     stats = result.get('stats_data') if isinstance(result.get('stats_data'), dict) else {}
     if analytic_type == 'tcm':
-        values = [value for feature in features if (value := _tcm_temperature(feature)) is not None]
+        values = [
+            value for feature in features
+            if (value := _tcm_average_temperature(feature)) is not None
+        ]
         temperature_stats = stats.get('temperature_stats') if isinstance(stats.get('temperature_stats'), dict) else {}
         minimum = _number(temperature_stats.get('minimum'))
         maximum = _number(temperature_stats.get('maximum'))
@@ -230,17 +249,18 @@ class FortyGuardProfileService:
     def _study_date(site: Site, requested: str | None) -> tuple[str, str]:
         timezone_name, site_timezone = FortyGuardClient._site_timezone(site)
         local_today = datetime.now(timezone.utc).astimezone(site_timezone).date()
+        last_complete_day = local_today - timedelta(days=1)
         if requested:
             try:
                 selected = date.fromisoformat(requested)
             except ValueError as exc:
                 raise ValueError('FortyGuard profile date must use YYYY-MM-DD.') from exc
         else:
-            selected = local_today
-        if selected < date(2021, 1, 1):
-            raise ValueError('FortyGuard profile dates must be on or after 2021-01-01.')
-        if selected > local_today:
-            raise ValueError('FortyGuard profile date cannot be in the future for the selected site.')
+            selected = last_complete_day
+        if selected < date(2019, 1, 1):
+            raise ValueError('FortyGuard profile dates must be on or after 2019-01-01.')
+        if selected > last_complete_day:
+            raise ValueError('FortyGuard full-day profile must use a completed day (yesterday or earlier).')
         return selected.isoformat(), timezone_name
 
     async def _request_layer(
@@ -289,7 +309,7 @@ class FortyGuardProfileService:
                 latitude=worker.coordinate.lat,
                 longitude=worker.coordinate.lng,
             )
-            peak_temperature = _tcm_temperature(tcm) if tcm else None
+            peak_temperature = _tcm_peak_temperature(tcm)
 
             time_feature = _find_containing(
                 time_features,
@@ -380,13 +400,17 @@ class FortyGuardProfileService:
         ]
         _, tcm_result, tcm_error = layer_results['tcm']
         tcm_features = _features(tcm_result or {})
-        tcm_values = [
+        tcm_average_values = [
             value for feature in tcm_features
-            if (value := _tcm_temperature(feature)) is not None
+            if (value := _tcm_average_temperature(feature)) is not None
+        ]
+        tcm_peak_values = [
+            value for feature in tcm_features
+            if (value := _tcm_peak_temperature(feature)) is not None
         ]
 
         request_count = sum(1 for activity, _, _ in layer_results.values() if activity)
-        if not tcm_values:
+        if not tcm_average_values:
             profile = FortyGuardDailyProfile(
                 siteId=site.id,
                 siteName=site.name,
@@ -398,7 +422,7 @@ class FortyGuardProfileService:
                 generatedAt=now.isoformat(),
                 providerRequestCount=request_count,
                 layers=layers,
-                message=tcm_error or 'FortyGuard returned no usable TCM temperature cells for this date.',
+                message=tcm_error or 'FortyGuard returned no usable TCM average-temperature cells for this date.',
             )
             self._cache(cache_key, now, profile)
             return profile
@@ -408,8 +432,8 @@ class FortyGuardProfileService:
         persistence_features = _features(layer_results['persistence'][1] or {})
 
         hottest_feature = max(
-            (feature for feature in tcm_features if _tcm_temperature(feature) is not None),
-            key=lambda feature: _tcm_temperature(feature) or float('-inf'),
+            (feature for feature in tcm_features if _tcm_peak_temperature(feature) is not None),
+            key=lambda feature: _tcm_peak_temperature(feature) or float('-inf'),
         )
         hottest_time_feature = _match_tile(time_features, hottest_feature)
         peak_value = _analysis_value(hottest_time_feature)
@@ -457,10 +481,10 @@ class FortyGuardProfileService:
             dataStatus=data_status,
             generatedAt=now.isoformat(),
             providerRequestCount=request_count,
-            tcmCellCount=len(tcm_values),
-            minTemperatureC=min(tcm_values),
-            meanTemperatureC=sum(tcm_values) / len(tcm_values),
-            maxTemperatureC=max(tcm_values),
+            tcmCellCount=len(tcm_average_values),
+            minTemperatureC=min(tcm_average_values),
+            meanTemperatureC=sum(tcm_average_values) / len(tcm_average_values),
+            maxTemperatureC=max(tcm_peak_values) if tcm_peak_values else max(tcm_average_values),
             peakHourUtc=site_peak_hour_utc,
             peakHourLocal=_local_hour_label(site_peak_hour_utc, study_date, timezone_name),
             meanHoursAboveThreshold=(sum(exceedance_values) / len(exceedance_values)) if exceedance_values else None,

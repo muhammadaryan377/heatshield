@@ -130,7 +130,7 @@ export function SiteIntelligencePage() {
       />
 
       <div className="page-content">
-        {sitesLoading && <StatePanel kind="loading" title="Loading HeatShield" detail="Checking your work sites…" />}
+        {sitesLoading && <StatePanel kind="loading" title="Loading HeatShield" detail="Checking your work sites before FortyGuard analysis…" />}
 
         {!sitesLoading && error && !sites.length && (
           <StatePanel kind="error" title="Could not load sites" detail={error} onRetry={() => window.location.reload()} />
@@ -145,25 +145,25 @@ export function SiteIntelligencePage() {
               <div className="first-site-state__outline" />
             </div>
             <div className="first-site-state__content">
-              <span className="eyebrow">START WITH REAL SITE DATA</span>
+              <span className="eyebrow">START WITH A REAL FORTYGUARD AREA OF INTEREST</span>
               <h2>Create your first work site</h2>
-              <p>HeatShield starts empty. Draw the complete work area on Google Maps, then add the people who actually work there. Environmental intelligence is requested only for the site you create.</p>
+              <p>Draw the complete work area on Google Maps. HeatShield uses that exact saved polygon as the FortyGuard area of interest, then joins workers and operational zones to provider-backed thermal cells.</p>
               <button type="button" className="button button--primary first-site-state__cta" onClick={() => setCreateSiteOpen(true)}><Plus size={18} /> Create Site</button>
               <div className="setup-sequence">
                 <div><span><Building2 size={17} /></span><strong>1. Create site</strong><small>Draw the full polygon on the map</small></div>
-                <div><span><UserPlus size={17} /></span><strong>2. Add workers</strong><small>Assign real workers and positions</small></div>
-                <div><span><Info size={17} /></span><strong>3. Analyze</strong><small>Fetch verified heat conditions</small></div>
+                <div><span><UserPlus size={17} /></span><strong>2. Add workers</strong><small>Assign real worker coordinates</small></div>
+                <div><span><Info size={17} /></span><strong>3. FortyGuard analysis</strong><small>Use the saved polygon for thermal evidence</small></div>
               </div>
             </div>
           </section>
         )}
 
-        {selectedSiteId && loading && !data && <StatePanel kind="loading" title="Loading Site Intelligence" detail="Reading the selected site and requesting live environmental data…" />}
+        {selectedSiteId && loading && !data && <StatePanel kind="loading" title="Loading Site Intelligence" detail="Requesting FortyGuard thermal evidence for the saved site polygon and verified atmospheric context…" />}
         {selectedSiteId && error && !data && <StatePanel kind="error" title="Site Intelligence unavailable" detail={error} onRetry={reload} />}
 
         {data && (
           <>
-            {error && <div className="inline-warning"><Info size={16} /><span>Latest refresh failed. Showing the last successful site response.</span><button type="button" onClick={reload}>Retry</button></div>}
+            {error && <div className="inline-warning"><Info size={16} /><span>Latest provider refresh failed. Showing the last successful site response.</span><button type="button" onClick={reload}>Retry</button></div>}
             <div className="dashboard-grid dashboard-grid--top">
               <SiteMap site={data.site} workers={data.workers} temperatureC={data.conditions?.temperatureC} weatherLabel={data.conditions?.weatherLabel} />
               <SiteStatusPanel data={data} onRefresh={reload} />

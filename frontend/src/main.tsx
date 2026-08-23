@@ -13,6 +13,8 @@ import './product-polish.css'
 import './fortyguard-intelligence.css'
 import './operational-planner.css'
 import './historical-heat.css'
+import './historical-heat-site-selection.css'
+import './site-command-center.css'
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
