@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -230,17 +230,18 @@ class FortyGuardProfileService:
     def _study_date(site: Site, requested: str | None) -> tuple[str, str]:
         timezone_name, site_timezone = FortyGuardClient._site_timezone(site)
         local_today = datetime.now(timezone.utc).astimezone(site_timezone).date()
+        last_complete_day = local_today - timedelta(days=1)
         if requested:
             try:
                 selected = date.fromisoformat(requested)
             except ValueError as exc:
                 raise ValueError('FortyGuard profile date must use YYYY-MM-DD.') from exc
         else:
-            selected = local_today
-        if selected < date(2021, 1, 1):
-            raise ValueError('FortyGuard profile dates must be on or after 2021-01-01.')
-        if selected > local_today:
-            raise ValueError('FortyGuard profile date cannot be in the future for the selected site.')
+            selected = last_complete_day
+        if selected < date(2019, 1, 1):
+            raise ValueError('FortyGuard profile dates must be on or after 2019-01-01.')
+        if selected > last_complete_day:
+            raise ValueError('FortyGuard full-day profile must use a completed day (yesterday or earlier).')
         return selected.isoformat(), timezone_name
 
     async def _request_layer(
