@@ -378,7 +378,7 @@ export function SiteMap({ site, workers, temperatureC, weatherLabel }: SiteMapPr
       draw() {
         const canvas = this.canvas
         const projection = this.getProjection()
-        const mapBounds = map.getBounds()
+        const mapBounds = mapRef.current?.getBounds()
         if (!canvas || !projection || !mapBounds) return
 
         const northEast = projection.fromLatLngToDivPixel(mapBounds.getNorthEast())
