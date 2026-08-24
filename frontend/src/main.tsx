@@ -6,6 +6,7 @@ import './functional.css'
 import './site-builder-v2.css'
 import './sidebar-collapse.css'
 import './add-worker-v2.css'
+import './add-worker-intelligence.css'
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
