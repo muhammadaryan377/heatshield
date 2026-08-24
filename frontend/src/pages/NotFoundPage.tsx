@@ -8,10 +8,10 @@ export function NotFoundPage() {
         <span className="not-found-page__eyebrow">HEATSHIELD</span>
         <strong className="not-found-page__code">404</strong>
         <h1>That workspace route does not exist</h1>
-        <p>Use the module selector or return to Enterprise Overview. No project data has been changed.</p>
+        <p>Return to the module selector or open the HeatShield home workspace. No project data has been changed.</p>
         <div>
           <Link to="/" className="button button--secondary"><ArrowLeft size={16} /> All Modules</Link>
-          <Link to="/enterprise" className="button button--primary"><Home size={16} /> Enterprise Overview</Link>
+          <Link to="/workforce" className="button button--primary"><Home size={16} /> Workforce Command Center</Link>
         </div>
       </section>
     </main>
