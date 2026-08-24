@@ -12,9 +12,9 @@ function initialSidebarHidden() {
   return window.localStorage.getItem(SIDEBAR_STORAGE_KEY) === 'true'
 }
 
-interface AppShellProps extends PropsWithChildren {
+type AppShellProps = PropsWithChildren<{
   module?: HeatShieldModule
-}
+}>
 
 export function AppShell({ children, module = 'workforce' }: AppShellProps) {
   const [sidebarHidden, setSidebarHidden] = useState(initialSidebarHidden)
