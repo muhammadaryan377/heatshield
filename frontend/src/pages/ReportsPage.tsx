@@ -1,7 +1,6 @@
 import {
   AlertTriangle,
   Archive,
-  CalendarDays,
   CheckCircle2,
   ClipboardCheck,
   Database,
@@ -13,12 +12,11 @@ import {
   Printer,
   Save,
   ShieldCheck,
-  ThermometerSun,
   Trash2,
   UserRound,
   UsersRound,
 } from 'lucide-react'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { AppShell } from '../components/layout/AppShell'
 import { Topbar } from '../components/layout/Topbar'
@@ -147,13 +145,11 @@ function evidenceStatus(
     if (historical?.dataStatus === 'partial') return 'partial'
     return 'limited'
   }
-
   if (historicalRequested) {
     if (currentVerified && historical?.dataStatus === 'verified') return 'verified'
     if (currentAvailable || historical?.dataStatus === 'verified' || historical?.dataStatus === 'partial') return 'partial'
     return 'limited'
   }
-
   if (currentVerified) return 'verified'
   if (currentAvailable) return 'partial'
   return 'limited'
@@ -184,6 +180,13 @@ function approvalTarget(approval: OperationalApproval, snapshot: WorkforceReport
     return snapshot.intelligence.site.zones.find((zone) => zone.id === approval.targetZoneId)?.name ?? 'Approved zone'
   }
   return 'Current assignment'
+}
+
+function sameUtcDay(value: string, reference = new Date()) {
+  const date = new Date(value)
+  return date.getUTCFullYear() === reference.getUTCFullYear()
+    && date.getUTCMonth() === reference.getUTCMonth()
+    && date.getUTCDate() === reference.getUTCDate()
 }
 
 export function ReportsPage() {
@@ -233,7 +236,7 @@ export function ReportsPage() {
     setSearchParams({ site: siteId }, { replace: true })
     const controller = new AbortController()
     setLoadingWorkers(true)
-    setReport(null)
+    setReport((current) => current && current.siteId === siteId ? current : null)
     setError(null)
     api.listWorkers(siteId, controller.signal)
       .then((loaded) => {
@@ -281,9 +284,11 @@ export function ReportsPage() {
       ])
       const worker = intelligence.workers.find((item) => item.id === workerId) ?? selectedWorker
       const historical = historicalResult ? compactHistorical(historicalResult) : null
-      const relevantApprovals = reportType === 'worker_exposure'
-        ? approvals.filter((approval) => approval.workerId === workerId)
-        : approvals
+      const relevantApprovals = reportType === 'historical_site'
+        ? []
+        : reportType === 'worker_exposure'
+          ? approvals.filter((approval) => approval.workerId === workerId)
+          : approvals.filter((approval) => sameUtcDay(approval.createdAt))
       const snapshot: WorkforceReportSnapshot = {
         id: makeId(),
         type: reportType,
@@ -325,6 +330,11 @@ export function ReportsPage() {
   const openSavedReport = (item: WorkforceReportSnapshot) => {
     setReport(item)
     setSiteId(item.siteId)
+  }
+
+  const changeSite = (nextId: string) => {
+    setReport(null)
+    setSiteId(nextId)
   }
 
   const downloadCsv = () => {
@@ -374,7 +384,16 @@ export function ReportsPage() {
     })
     if (report.historical) {
       rows.push([], ['Historical Context'])
-      rows.push(['Start', report.historical.startDate], ['End', report.historical.endDate], ['Threshold C', report.historical.thresholdC], ['Mean Temperature C', report.historical.meanTemperatureC ?? ''], ['Max Temperature C', report.historical.maxTemperatureC ?? ''], ['Max Exceedance Hours', report.historical.maxExceedanceHours ?? ''], ['Max Persistence Hours', report.historical.maxPersistenceHours ?? ''], ['Typical Peak', report.historical.commonPeakPeriodLocal ?? ''])
+      rows.push(
+        ['Start', report.historical.startDate],
+        ['End', report.historical.endDate],
+        ['Threshold C', report.historical.thresholdC],
+        ['Mean Temperature C', report.historical.meanTemperatureC ?? ''],
+        ['Max Temperature C', report.historical.maxTemperatureC ?? ''],
+        ['Max Exceedance Hours', report.historical.maxExceedanceHours ?? ''],
+        ['Max Persistence Hours', report.historical.maxPersistenceHours ?? ''],
+        ['Typical Peak', report.historical.commonPeakPeriodLocal ?? ''],
+      )
     }
     const csv = rows.map((row) => row.map(csvCell).join(',')).join('\n')
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' })
@@ -396,7 +415,7 @@ export function ReportsPage() {
         sites={sites}
         selectedSiteId={siteId}
         observedAt={report?.intelligence.observedAt}
-        onSiteChange={setSiteId}
+        onSiteChange={changeSite}
         pageTitle="Workforce Heat Reports"
         pageSubtitle="Turn verified heat evidence, worker context, supervisor decisions and historical site intelligence into an auditable operational record."
         showAddSite={false}
@@ -476,7 +495,7 @@ function ReportDocument({ report, onSave, onDownload, onPrint, saved }: {
       ? targetWorker
         ? `${targetWorker.name} is recorded as ${targetWorker.risk} exposure for ${targetWorker.task ?? targetWorker.role} in ${targetWorker.location}. ${report.approvals.length} supervisor decision${report.approvals.length === 1 ? '' : 's'} are attached to this worker record, with ${verifiedApprovals} verified by a fresh FortyGuard check.`
         : 'The selected worker is no longer present in the saved site snapshot.'
-      : `${activeWorkers.length} active worker${activeWorkers.length === 1 ? '' : 's'} are included. ${highExposure} currently carry high or extreme recorded exposure, and ${report.approvals.length} supervisor decision${report.approvals.length === 1 ? '' : 's'} are present in the audit log, including ${verifiedApprovals} fresh verification${verifiedApprovals === 1 ? '' : 's'}.`
+      : `${activeWorkers.length} active worker${activeWorkers.length === 1 ? '' : 's'} are included. ${highExposure} currently carry high or extreme recorded exposure, and ${report.approvals.length} supervisor decision${report.approvals.length === 1 ? '' : 's'} from the current UTC day are present in the audit log, including ${verifiedApprovals} fresh verification${verifiedApprovals === 1 ? '' : 's'}.`
 
   return <article className="wfr-document">
     <header className="wfr-document__header">
