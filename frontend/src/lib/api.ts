@@ -16,7 +16,13 @@ import type {
   WorkerCreate,
 } from '../types/site'
 import type { HistoricalHeatBehaviorRequest, HistoricalHeatBehaviorResponse } from '../types/history'
-import type { UrbanMorphologyRequest, UrbanMorphologyResponse } from '../types/urban'
+import type {
+  UrbanIntervention,
+  UrbanInterventionCreate,
+  UrbanInterventionStatus,
+  UrbanMorphologyRequest,
+  UrbanMorphologyResponse,
+} from '../types/urban'
 
 const BASE_URL = import.meta.env.VITE_API_BASE_URL ?? ''
 
@@ -108,6 +114,21 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(payload),
       signal,
+    })
+  },
+  listUrbanInterventions(siteId: string, signal?: AbortSignal) {
+    return request<UrbanIntervention[]>(`/api/sites/${siteId}/urban-interventions`, { signal })
+  },
+  createUrbanIntervention(siteId: string, payload: UrbanInterventionCreate) {
+    return request<UrbanIntervention>(`/api/sites/${siteId}/urban-interventions`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    })
+  },
+  updateUrbanInterventionStatus(siteId: string, interventionId: string, status: UrbanInterventionStatus) {
+    return request<UrbanIntervention>(`/api/sites/${siteId}/urban-interventions/${interventionId}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ status }),
     })
   },
   generateOperationalPlanner(siteId: string, payload: OperationalPlannerRequest, signal?: AbortSignal) {
