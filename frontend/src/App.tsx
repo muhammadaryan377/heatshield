@@ -3,6 +3,7 @@ import { AddWorkerPage } from './pages/AddWorkerPage'
 import { AgricultureCropHeatStressPage } from './pages/AgricultureCropHeatStressPage'
 import { AgricultureFarmsPage } from './pages/AgricultureFarmsPage'
 import { AgricultureFieldsPage } from './pages/AgricultureFieldsPage'
+import { AgricultureIrrigationPlannerPage } from './pages/AgricultureIrrigationPlannerPage'
 import { AgricultureOverviewPage } from './pages/AgricultureOverviewPage'
 import { EnterpriseOverviewPage } from './pages/EnterpriseOverviewPage'
 import { GeneratePlanPage } from './pages/GeneratePlanPage'
@@ -32,6 +33,7 @@ export default function App() {
         <Route path="/agriculture/farms" element={<AgricultureFarmsPage />} />
         <Route path="/agriculture/fields" element={<AgricultureFieldsPage />} />
         <Route path="/agriculture/crop-heat-stress" element={<AgricultureCropHeatStressPage />} />
+        <Route path="/agriculture/irrigation" element={<AgricultureIrrigationPlannerPage />} />
         <Route path="/agriculture/*" element={<ModuleLandingPage module="agriculture" />} />
         <Route path="/urban/*" element={<ModuleLandingPage module="urban" />} />
 
