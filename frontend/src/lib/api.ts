@@ -123,6 +123,9 @@ export const api = {
       signal,
     })
   },
+  listOperationalApprovals(siteId: string, signal?: AbortSignal) {
+    return request<OperationalApproval[]>(`/api/sites/${siteId}/operational-planner/approvals`, { signal })
+  },
   approveOperationalDecision(siteId: string, payload: OperationalApprovalRequest) {
     return request<OperationalApproval>(`/api/sites/${siteId}/operational-planner/approvals`, {
       method: 'POST',
