@@ -18,7 +18,6 @@ import {
   Repeat2,
   Sprout,
   Thermometer,
-  UserPlus,
   Users,
 } from 'lucide-react'
 import { Link, NavLink } from 'react-router-dom'
@@ -30,12 +29,12 @@ const moduleNavigation = {
     label: 'Workforce Safety',
     workspace: 'HeatShield Workforce',
     nav: [
-      { to: '/workforce', label: 'Home', icon: Home, end: true },
-      { to: '/workers/new', label: 'Add Worker', icon: UserPlus },
-      { to: '/plan', label: 'Generate Plan', icon: ClipboardList },
-      { to: '/sites', label: 'Sites', icon: MapPin },
-      { to: '/historical-intelligence', label: 'Historical Intelligence', icon: History },
-      { to: '/reports', label: 'Heat Reports', icon: BarChart3 },
+      { to: '/workforce', label: 'Command Center', icon: Home, end: true },
+      { to: '/workforce/workers', label: 'Workforce', icon: Users },
+      { to: '/workforce/sites', label: 'Sites & Zones', icon: MapPin },
+      { to: '/workforce/operations', label: 'Operations', icon: ClipboardList },
+      { to: '/workforce/site-heat-intelligence', label: 'Site Heat Intelligence', icon: History },
+      { to: '/workforce/reports', label: 'Reports & Audit', icon: FileText },
     ],
   },
   enterprise: {
@@ -81,7 +80,7 @@ const moduleNavigation = {
     label: 'Platform',
     workspace: 'HeatShield Ops',
     nav: [
-      { to: '/reports', label: 'Heat Reports', icon: BarChart3, end: true },
+      { to: '/reports', label: 'Reports & Audit', icon: BarChart3, end: true },
     ],
   },
 } satisfies Record<HeatShieldModule, {
