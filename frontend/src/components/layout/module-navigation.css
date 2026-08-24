@@ -27,6 +27,18 @@
 
 .sidebar__module-context > a:hover { color: var(--teal); }
 
+.sidebar a.workspace-switcher,
+.sidebar a.support-link {
+  color: inherit;
+  text-decoration: none;
+}
+
+.sidebar a.workspace-switcher:focus-visible,
+.sidebar a.support-link:focus-visible {
+  outline: 3px solid rgba(11, 143, 138, .18);
+  outline-offset: 2px;
+}
+
 .sidebar .workspace-switcher__text strong {
   max-width: 126px;
 }

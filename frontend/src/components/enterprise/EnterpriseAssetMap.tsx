@@ -61,9 +61,19 @@ export function EnterpriseAssetMap({
   const markersRef = useRef<google.maps.Marker[]>([])
   const draftMarkerRef = useRef<google.maps.Marker | null>(null)
   const infoRef = useRef<google.maps.InfoWindow | null>(null)
+  const onPickCoordinateRef = useRef(onPickCoordinate)
+  const onSelectAssetRef = useRef(onSelectAsset)
   const [mapType, setMapType] = useState<'satellite' | 'roadmap'>('satellite')
   const [mapError, setMapError] = useState<string | null>(null)
   const [mapVersion, setMapVersion] = useState(0)
+
+  useEffect(() => {
+    onPickCoordinateRef.current = onPickCoordinate
+  }, [onPickCoordinate])
+
+  useEffect(() => {
+    onSelectAssetRef.current = onSelectAsset
+  }, [onSelectAsset])
 
   useEffect(() => {
     if (!apiKey || !containerRef.current) return
@@ -102,7 +112,7 @@ export function EnterpriseAssetMap({
 
         map.addListener('click', (event: google.maps.MapMouseEvent) => {
           if (!event.latLng) return
-          onPickCoordinate({ lat: event.latLng.lat(), lng: event.latLng.lng() })
+          onPickCoordinateRef.current({ lat: event.latLng.lat(), lng: event.latLng.lng() })
         })
         setMapVersion((value) => value + 1)
       })
@@ -124,7 +134,7 @@ export function EnterpriseAssetMap({
       sitePolygonRef.current = null
       mapRef.current = null
     }
-  }, [site.id, site.center.lat, site.center.lng, site.polygon, mapType, onPickCoordinate])
+  }, [site.id, site.center.lat, site.center.lng, site.polygon, mapType])
 
   useEffect(() => {
     const map = mapRef.current
@@ -177,7 +187,7 @@ export function EnterpriseAssetMap({
         },
       })
       marker.addListener('click', () => {
-        onSelectAsset(exposure.asset.id)
+        onSelectAssetRef.current(exposure.asset.id)
         infoRef.current?.close()
         const temperature = exposure.latestTemperatureC == null ? 'No matched thermal cell' : `${exposure.latestTemperatureC.toFixed(1)}°C latest surface`
         const persistence = exposure.persistenceHours == null ? 'Persistence unavailable' : `${exposure.persistenceHours.toFixed(1)} h persistence`
@@ -190,7 +200,7 @@ export function EnterpriseAssetMap({
       })
       return marker
     })
-  }, [exposures, mapVersion, onSelectAsset, selectedAssetId, thermal])
+  }, [exposures, mapVersion, selectedAssetId, thermal])
 
   useEffect(() => {
     draftMarkerRef.current?.setMap(null)

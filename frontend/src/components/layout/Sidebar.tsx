@@ -4,7 +4,6 @@ import {
   Bell,
   Box,
   Building2,
-  CircleHelp,
   ClipboardList,
   Droplets,
   Factory,
@@ -97,6 +96,7 @@ interface SidebarProps {
 
 export function Sidebar({ module, hidden, onHide }: SidebarProps) {
   const config = moduleNavigation[module]
+  const workspaceHome = config.nav[0]?.to ?? '/'
 
   return (
     <aside className={`sidebar${hidden ? ' sidebar--hidden' : ''}`} aria-hidden={hidden}>
@@ -132,19 +132,14 @@ export function Sidebar({ module, hidden, onHide }: SidebarProps) {
       </nav>
 
       <div className="sidebar__footer">
-        <button className="workspace-switcher" type="button">
+        <Link className="workspace-switcher" to={workspaceHome} title={`Open ${config.workspace} home`}>
           <span className="workspace-switcher__avatar">HS</span>
           <span className="workspace-switcher__text">
             <strong>{config.workspace}</strong>
-            <small>FortyGuard Core</small>
+            <small>FortyGuard Evidence</small>
           </span>
-          <span className="workspace-switcher__chevron">⌄</span>
-        </button>
-        <button className="support-link" type="button">
-          <CircleHelp size={20} strokeWidth={1.8} />
-          <span>Help &amp; Support</span>
-          <span className="support-link__chevron">›</span>
-        </button>
+          <span className="workspace-switcher__chevron">›</span>
+        </Link>
       </div>
     </aside>
   )
