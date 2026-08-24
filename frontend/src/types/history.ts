@@ -8,7 +8,7 @@ export interface HistoricalHeatBehaviorRequest {
 }
 
 export interface HistoricalLayerStatus {
-  analyticType: 'exceedance' | 'persistence' | 'time_of_measure'
+  analyticType: 'tcm' | 'exceedance' | 'persistence' | 'time_of_measure'
   status: 'verified' | 'unavailable'
   activityId?: string | null
   cellCount: number
@@ -22,6 +22,7 @@ export interface HistoricalLayerStatus {
 export interface HistoricalHeatCell {
   id: string
   polygon: Coordinate[]
+  temperatureC?: number | null
   exceedanceHours?: number | null
   persistenceHours?: number | null
   peakHourUtc?: number | null
@@ -33,6 +34,7 @@ export interface HistoricalZoneSample {
   zoneName: string
   zoneType: string
   evidenceStatus: 'complete' | 'partial' | 'unmatched'
+  temperatureC?: number | null
   exceedanceHours?: number | null
   persistenceHours?: number | null
   peakHourUtc?: number | null
@@ -53,6 +55,9 @@ export interface HistoricalHeatBehaviorResponse {
   generatedAt: string
   providerRequestCount: number
   cellCount: number
+  meanTemperatureC?: number | null
+  minTemperatureC?: number | null
+  maxTemperatureC?: number | null
   meanExceedanceHours?: number | null
   maxExceedanceHours?: number | null
   meanPersistenceHours?: number | null
