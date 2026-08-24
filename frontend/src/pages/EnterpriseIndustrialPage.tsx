@@ -33,6 +33,7 @@ import '../enterprise-assets.css'
 import '../enterprise-industrial.css'
 
 const STORAGE_KEY = 'heatshield:selected-site'
+const HISTORY_MIN_DATE = '2019-01-01'
 type Granularity = 60 | 80 | 100
 type FacilityLens = 'data-center' | 'industrial'
 
@@ -322,9 +323,18 @@ export function EnterpriseIndustrialPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  const appliedDate = history?.startDate ?? analysisDate
+  const appliedThresholdC = history?.thresholdC ?? thresholdC
+  const appliedGranularity = (history?.granularityMeters ?? granularity) as Granularity
+  const controlsChanged = Boolean(history) && (
+    analysisDate !== appliedDate
+    || Math.abs(thresholdC - appliedThresholdC) > 0.001
+    || granularity !== appliedGranularity
+  )
+
   const exposures = useMemo(
-    () => assets.map((asset) => deriveExposure(asset, thermal, history, thresholdC)),
-    [assets, history, thermal, thresholdC],
+    () => assets.map((asset) => deriveExposure(asset, thermal, history, appliedThresholdC)),
+    [appliedThresholdC, assets, history, thermal],
   )
 
   const ranked = useMemo(() => [...exposures]
@@ -388,7 +398,7 @@ export function EnterpriseIndustrialPage() {
     if (selectedSiteId) void runAnalysis(selectedSiteId, analysisDate, thresholdC, granularity)
   }
 
-  const maxDate = localDateString(new Date())
+  const maxDate = defaultAnalysisDate()
 
   return (
     <AppShell module="enterprise">
@@ -431,14 +441,15 @@ export function EnterpriseIndustrialPage() {
               </div>
 
               <form onSubmit={submitAnalysis} className="industrial-controls__form">
-                <label><span>Completed day</span><div><CalendarDays size={15} /><input type="date" min="2021-01-01" max={maxDate} value={analysisDate} onChange={(event) => setAnalysisDate(event.target.value)} /></div></label>
+                <label><span>Completed day</span><div><CalendarDays size={15} /><input type="date" min={HISTORY_MIN_DATE} max={maxDate} value={analysisDate} onChange={(event) => setAnalysisDate(event.target.value)} /></div></label>
                 <label><span>Heat threshold</span><div><ThermometerSun size={15} /><input type="number" min="20" max="55" step="0.5" value={thresholdC} onChange={(event) => setThresholdC(Number(event.target.value))} /><b>°C</b></div></label>
                 <label><span>Resolution</span><div><Database size={15} /><select value={granularity} onChange={(event) => setGranularity(Number(event.target.value) as Granularity)}><option value={60}>60 m</option><option value={80}>80 m</option><option value={100}>100 m</option></select></div></label>
-                <button className="button button--primary" type="submit" disabled={analysisLoading}>{analysisLoading ? <RefreshCw className="spin" size={16} /> : <Activity size={16} />}{analysisLoading ? 'Analyzing…' : 'Run Facility Analysis'}</button>
+                <button className="button button--primary" type="submit" disabled={analysisLoading}>{analysisLoading ? <RefreshCw className="spin" size={16} /> : <Activity size={16} />}{analysisLoading ? 'Analyzing…' : controlsChanged ? 'Re-run Facility Analysis' : 'Run Facility Analysis'}</button>
               </form>
             </section>
 
-            <div className="industrial-evidence-note"><ShieldCheck size={16} /><span><strong>Evidence model:</strong> latest surface temperature is verified FortyGuard TCM; persistence/exceedance use {analysisDate}. Facility and cooling scores are HeatShield-derived operational proxies, not provider measurements.</span></div>
+            <div className="industrial-evidence-note"><ShieldCheck size={16} /><span><strong>Evidence model:</strong> latest surface temperature is verified FortyGuard TCM; persistence/exceedance use the last applied completed day ({appliedDate}). Facility and cooling scores are HeatShield-derived operational proxies, not provider measurements.</span></div>
+            {controlsChanged && <div className="industrial-warning"><AlertTriangle size={16} /><span>Facility controls changed. Current scores still use {appliedDate}, {appliedThresholdC.toFixed(1)}°C and {appliedGranularity} m until you re-run the analysis.</span></div>}
             {error && <div className="industrial-warning"><AlertTriangle size={16} /><span>{error}</span></div>}
 
             <section className="industrial-kpis" aria-label="Industrial heat intelligence summary">
@@ -446,7 +457,7 @@ export function EnterpriseIndustrialPage() {
               <article><span><ThermometerSun size={17} /> Peak Site Surface</span><strong>{temperature(thermal?.maxTemperatureC)}</strong><small>{thermal?.dataStatus === 'verified' ? `${thermal.tileCount} verified cells` : 'No synthetic heat shown'}</small></article>
               <article><span><Snowflake size={17} /> Cooling Exposure Proxy</span><strong>{coolingExposureScore == null ? '—' : `${coolingExposureScore}/100`}</strong><small>{coolingAssets.length ? `${coolingAssessed.length}/${coolingAssets.length} cooling-related assets assessed` : 'No cooling-related assets registered'}</small></article>
               <article><span><Zap size={17} /> Critical Infrastructure</span><strong>{criticalInfraAtRisk.length}</strong><small>{criticalInfra.length} registered critical / power / cooling assets</small></article>
-              <article><span><Flame size={17} /> Max Heat Persistence</span><strong>{hours(history?.maxPersistenceHours)}</strong><small>Selected completed day</small></article>
+              <article><span><Flame size={17} /> Max Heat Persistence</span><strong>{hours(history?.maxPersistenceHours)}</strong><small>{appliedDate} completed day</small></article>
               <article><span><Clock3 size={17} /> Operational Risk Window</span><strong className="industrial-kpis__window">{peakWindow}</strong><small>Common FortyGuard peak period</small></article>
               <article><span><BatteryCharging size={17} /> Backup Equipment Exposure</span><strong>{backupAtRisk.length}</strong><small>{backupAssets.length ? `${backupAssets.length} generator / UPS assets registered` : 'Add generator or UPS assets to assess'}</small></article>
             </section>
@@ -467,7 +478,7 @@ export function EnterpriseIndustrialPage() {
                 <div className="industrial-side__head"><span>OPERATIONS</span><h2>Operational Risk Window</h2><p>Use the returned peak-time and persistence evidence to plan inspections and nonessential work.</p></div>
                 <div className="industrial-window-card">
                   <Clock3 size={20} />
-                  <div><span>Common peak period</span><strong>{peakWindow}</strong><small>{history?.dataStatus === 'verified' || history?.dataStatus === 'partial' ? `${analysisDate} · ${thresholdC.toFixed(1)}°C threshold` : 'Historical layer unavailable'}</small></div>
+                  <div><span>Common peak period</span><strong>{peakWindow}</strong><small>{history?.dataStatus === 'verified' || history?.dataStatus === 'partial' ? `${appliedDate} · ${appliedThresholdC.toFixed(1)}°C threshold` : 'Historical layer unavailable'}</small></div>
                 </div>
                 <div className="industrial-side__metrics">
                   <div><span>Mean exceedance</span><strong>{hours(history?.meanExceedanceHours)}</strong></div>
@@ -567,7 +578,7 @@ export function EnterpriseIndustrialPage() {
               <div><ShieldCheck size={19} /><span><strong>Evidence provenance</strong><small>Provider measurements and HeatShield-derived operational interpretation remain separated.</small></span></div>
               <div className="industrial-provenance__items">
                 <span><b>Latest surface</b>{thermal?.dataStatus === 'verified' ? `FortyGuard · ${thermal.tileCount} cells` : 'Unavailable'}</span>
-                <span><b>Historical exposure</b>{history?.dataStatus ?? 'Unavailable'} · {history?.providerRequestCount ?? 0} provider requests</span>
+                <span><b>Historical exposure</b>{history?.dataStatus ?? 'Unavailable'} · {appliedDate} · {appliedThresholdC.toFixed(1)}°C · {appliedGranularity} m · {history?.providerRequestCount ?? 0} provider requests</span>
                 <span><b>Asset registry</b>{assets.length} HeatShield enterprise assets</span>
                 <span><b>Facility score</b>HeatShield-derived operational proxy</span>
               </div>

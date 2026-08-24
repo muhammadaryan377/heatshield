@@ -35,6 +35,7 @@ import type { Coordinate, Site, SiteIntelligence, ThermalMapResponse, ThermalTil
 import '../enterprise-assets.css'
 
 const STORAGE_KEY = 'heatshield:selected-site'
+const HISTORY_MIN_DATE = '2019-01-01'
 type Granularity = 60 | 80 | 100
 
 function localDateString(date: Date) {
@@ -251,6 +252,7 @@ export function EnterpriseAssetsPage() {
   const [assetFormOpen, setAssetFormOpen] = useState(false)
   const [assetSaving, setAssetSaving] = useState(false)
   const [assetError, setAssetError] = useState<string | null>(null)
+  const [placementConfirmed, setPlacementConfirmed] = useState(false)
   const [draft, setDraft] = useState<AssetDraft | null>(null)
   const requestRef = useRef<AbortController | null>(null)
 
@@ -309,6 +311,19 @@ export function EnterpriseAssetsPage() {
   useEffect(() => () => requestRef.current?.abort(), [])
 
   useEffect(() => {
+    if (!assetFormOpen) return
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && !assetSaving) {
+        setAssetFormOpen(false)
+        setDraft(null)
+        setPlacementConfirmed(false)
+      }
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [assetFormOpen, assetSaving])
+
+  useEffect(() => {
     const controller = new AbortController()
     setSitesLoading(true)
     api.listSites(controller.signal)
@@ -332,9 +347,18 @@ export function EnterpriseAssetsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  const appliedDate = history?.startDate ?? analysisDate
+  const appliedThresholdC = history?.thresholdC ?? thresholdC
+  const appliedGranularity = (history?.granularityMeters ?? granularity) as Granularity
+  const controlsChanged = Boolean(history) && (
+    analysisDate !== appliedDate
+    || Math.abs(thresholdC - appliedThresholdC) > 0.001
+    || granularity !== appliedGranularity
+  )
+
   const exposures = useMemo(
-    () => assets.map((asset) => deriveExposure(asset, thermal, history, thresholdC)),
-    [assets, history, thermal, thresholdC],
+    () => assets.map((asset) => deriveExposure(asset, thermal, history, appliedThresholdC)),
+    [appliedThresholdC, assets, history, thermal],
   )
 
   useEffect(() => {
@@ -370,6 +394,8 @@ export function EnterpriseAssetsPage() {
     setIntelligence(null)
     setSelectedAssetId(null)
     setAssetFormOpen(false)
+    setDraft(null)
+    setPlacementConfirmed(false)
     localStorage.setItem(STORAGE_KEY, siteId)
     setSearchParams({ site: siteId }, { replace: true })
     void runEvidence(siteId, analysisDate, thresholdC, granularity)
@@ -379,26 +405,47 @@ export function EnterpriseAssetsPage() {
     if (selectedSiteId) void runEvidence(selectedSiteId, analysisDate, thresholdC, granularity)
   }
 
+  const closeAssetForm = () => {
+    if (assetSaving) return
+    setAssetFormOpen(false)
+    setDraft(null)
+    setPlacementConfirmed(false)
+    setAssetError(null)
+  }
+
   const openAssetForm = () => {
     if (!selectedSite) return
     setDraft(freshDraft(selectedSite))
     setAssetError(null)
+    setPlacementConfirmed(false)
     setAssetFormOpen(true)
   }
 
   const pickCoordinate = useCallback((coordinate: Coordinate) => {
     if (!assetFormOpen || !selectedSite) return
     if (!pointInPolygon(coordinate, selectedSite.polygon)) {
+      setPlacementConfirmed(false)
       setAssetError('Choose a point inside the saved site boundary.')
       return
     }
     setAssetError(null)
+    setPlacementConfirmed(true)
     setDraft((current) => current ? { ...current, coordinate } : current)
   }, [assetFormOpen, selectedSite])
 
   const submitAsset = async (event: FormEvent) => {
     event.preventDefault()
     if (!selectedSite || !draft || !draft.name.trim()) return
+    if (!placementConfirmed) {
+      setAssetError('Place the asset on the site map before saving. HeatShield will not assume a location.')
+      return
+    }
+    if (!pointInPolygon(draft.coordinate, selectedSite.polygon)) {
+      setPlacementConfirmed(false)
+      setAssetError('The selected asset point is outside the saved site boundary.')
+      return
+    }
+
     setAssetSaving(true)
     setAssetError(null)
     const payload: EnterpriseAssetCreate = {
@@ -419,6 +466,7 @@ export function EnterpriseAssetsPage() {
       setSelectedAssetId(created.id)
       setAssetFormOpen(false)
       setDraft(null)
+      setPlacementConfirmed(false)
     } catch (err) {
       setAssetError(err instanceof Error ? err.message : 'Unable to create asset.')
     } finally {
@@ -437,6 +485,8 @@ export function EnterpriseAssetsPage() {
       setError(err instanceof Error ? err.message : 'Unable to remove asset.')
     }
   }
+
+  const maxDate = defaultAnalysisDate()
 
   return (
     <AppShell module="enterprise">
@@ -463,15 +513,16 @@ export function EnterpriseAssetsPage() {
                 <small>{selectedSite.address}</small>
               </div>
               <div className="enterprise-assets-controls__evidence">
-                <label><span>Exposure day</span><input type="date" min="2021-01-01" max={localDateString(new Date())} value={analysisDate} onChange={(event) => setAnalysisDate(event.target.value)} /></label>
+                <label><span>Exposure day</span><input type="date" min={HISTORY_MIN_DATE} max={maxDate} value={analysisDate} onChange={(event) => setAnalysisDate(event.target.value)} /></label>
                 <label><span>Threshold °C</span><input type="number" min="20" max="55" step="0.5" value={thresholdC} onChange={(event) => setThresholdC(Number(event.target.value))} /></label>
                 <label><span>Resolution</span><select value={granularity} onChange={(event) => setGranularity(Number(event.target.value) as Granularity)}><option value={60}>60 m</option><option value={80}>80 m</option><option value={100}>100 m</option></select></label>
-                <button type="button" className="button button--secondary" onClick={refresh} disabled={evidenceLoading}>{evidenceLoading ? <RefreshCw className="spin" size={16} /> : <Database size={16} />}{evidenceLoading ? 'Refreshing…' : 'Refresh Evidence'}</button>
+                <button type="button" className="button button--secondary" onClick={refresh} disabled={evidenceLoading}>{evidenceLoading ? <RefreshCw className="spin" size={16} /> : <Database size={16} />}{evidenceLoading ? 'Refreshing…' : controlsChanged ? 'Apply & Refresh' : 'Refresh Evidence'}</button>
                 <button type="button" className="button button--primary" onClick={openAssetForm}><Plus size={16} /> Add Asset</button>
               </div>
             </section>
 
             <div className="enterprise-assets-source-note"><ShieldCheck size={15} /><span><strong>Evidence boundary:</strong> FortyGuard supplies spatial heat evidence. Asset criticality, limits and the HeatShield risk score are enterprise context and derived interpretation, not provider measurements.</span></div>
+            {controlsChanged && <div className="enterprise-assets-warning"><AlertTriangle size={16} /><span>Evidence controls changed. Current asset scores still use {appliedDate}, {appliedThresholdC.toFixed(1)}°C and {appliedGranularity} m until you refresh.</span></div>}
             {error && <div className="enterprise-assets-warning"><AlertTriangle size={16} /><span>{error}</span></div>}
 
             <section className="enterprise-assets-kpis" aria-label="Asset intelligence metrics">
@@ -490,7 +541,7 @@ export function EnterpriseAssetsPage() {
                 thermal={thermal}
                 selectedAssetId={selectedAssetId}
                 placementMode={assetFormOpen}
-                pendingCoordinate={draft?.coordinate ?? null}
+                pendingCoordinate={placementConfirmed ? draft?.coordinate ?? null : null}
                 onSelectAsset={setSelectedAssetId}
                 onPickCoordinate={pickCoordinate}
               />
@@ -504,7 +555,7 @@ export function EnterpriseAssetsPage() {
                     </div>
                     <div className="enterprise-asset-detail__metrics">
                       <div><span>Latest surface cell</span><strong>{temperature(selectedExposure.latestTemperatureC)}</strong><small>{thermal?.dataStatus === 'verified' ? formatObserved(thermal.observedAt) : 'FortyGuard unavailable'}</small></div>
-                      <div><span>Exceedance</span><strong>{hours(selectedExposure.exceedanceHours)}</strong><small>Above {thresholdC.toFixed(1)}°C on {analysisDate}</small></div>
+                      <div><span>Exceedance</span><strong>{hours(selectedExposure.exceedanceHours)}</strong><small>Above {appliedThresholdC.toFixed(1)}°C on {appliedDate}</small></div>
                       <div><span>Persistence</span><strong>{hours(selectedExposure.persistenceHours)}</strong><small>Longest continuous returned run</small></div>
                       <div><span>HeatShield score</span><strong>{selectedExposure.riskScore == null ? '—' : `${selectedExposure.riskScore}/100`}</strong><small>{selectedExposure.evidenceState.replaceAll('_', ' ')} evidence</small></div>
                     </div>
@@ -546,7 +597,7 @@ export function EnterpriseAssetsPage() {
                 <div className="enterprise-assets-provenance">
                   <span>EVIDENCE PROVENANCE</span>
                   <div><CheckCircle2 size={14} /><p><b>Latest TCM:</b> {thermal?.dataStatus === 'verified' ? `${thermal.tileCount} FortyGuard cells · ${formatObserved(thermal.observedAt)}` : 'Unavailable'}</p></div>
-                  <div><CheckCircle2 size={14} /><p><b>Daily exposure:</b> {history && ['verified', 'partial'].includes(history.dataStatus) ? `${history.cellCount} cells · ${history.providerRequestCount} provider request${history.providerRequestCount === 1 ? '' : 's'}` : 'Unavailable'}</p></div>
+                  <div><CheckCircle2 size={14} /><p><b>Daily exposure:</b> {history && ['verified', 'partial'].includes(history.dataStatus) ? `${history.cellCount} cells · ${appliedDate} · ${appliedThresholdC.toFixed(1)}°C · ${appliedGranularity} m` : 'Unavailable'}</p></div>
                   <div><Database size={14} /><p><b>Asset registry:</b> HeatShield enterprise records with exact site coordinates and business criticality.</p></div>
                 </div>
               </aside>
@@ -556,19 +607,19 @@ export function EnterpriseAssetsPage() {
       </main>
 
       {assetFormOpen && selectedSite && draft && (
-        <div className="enterprise-asset-drawer-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setAssetFormOpen(false) }}>
+        <div className="enterprise-asset-drawer-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) closeAssetForm() }}>
           <aside className="enterprise-asset-drawer" role="dialog" aria-modal="true" aria-labelledby="asset-drawer-title">
-            <div className="enterprise-asset-drawer__head"><div><span>REGISTER INFRASTRUCTURE</span><h2 id="asset-drawer-title">Add Enterprise Asset</h2><p>Click the site map to place the asset precisely, then add business and operating context.</p></div><button type="button" onClick={() => setAssetFormOpen(false)}><X size={18} /></button></div>
+            <div className="enterprise-asset-drawer__head"><div><span>REGISTER INFRASTRUCTURE</span><h2 id="asset-drawer-title">Add Enterprise Asset</h2><p>Click the site map to place the asset precisely, then add business and operating context.</p></div><button type="button" onClick={closeAssetForm} aria-label="Close asset form"><X size={18} /></button></div>
             <form onSubmit={submitAsset}>
               <label><span>Asset name *</span><input value={draft.name} onChange={(event) => setDraft({ ...draft, name: event.target.value })} placeholder="Transformer T-04" required /></label>
               <div className="enterprise-asset-drawer__row"><label><span>Asset code</span><input value={draft.assetCode} onChange={(event) => setDraft({ ...draft, assetCode: event.target.value })} placeholder="TR-04" /></label><label><span>Asset type</span><select value={draft.type} onChange={(event) => setDraft({ ...draft, type: event.target.value as EnterpriseAssetType })}><option value="transformer">Transformer</option><option value="hvac">HVAC</option><option value="chiller">Chiller</option><option value="generator">Generator</option><option value="cooling_tower">Cooling Tower</option><option value="ups">UPS</option><option value="server_room">Server Room</option><option value="loading_area">Loading Area</option><option value="other">Other</option></select></label></div>
               <div className="enterprise-asset-drawer__row"><label><span>Business criticality</span><select value={draft.criticality} onChange={(event) => setDraft({ ...draft, criticality: event.target.value as EnterpriseAsset['criticality'] })}><option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option><option value="critical">Critical</option></select></label><label><span>Status</span><select value={draft.status} onChange={(event) => setDraft({ ...draft, status: event.target.value as EnterpriseAsset['status'] })}><option value="operational">Operational</option><option value="maintenance">Maintenance</option><option value="offline">Offline</option></select></label></div>
               <div className="enterprise-asset-drawer__row"><label><span>Thermal operating limit °C</span><input type="number" min="-30" max="100" step="0.5" value={draft.heatLimitC} onChange={(event) => setDraft({ ...draft, heatLimitC: event.target.value })} placeholder="Optional" /></label><label><span>Owner / team</span><input value={draft.owner} onChange={(event) => setDraft({ ...draft, owner: event.target.value })} placeholder="Facilities / Electrical" /></label></div>
               <label className="enterprise-asset-drawer__check"><input type="checkbox" checked={draft.coolingDependent} onChange={(event) => setDraft({ ...draft, coolingDependent: event.target.checked })} /><span><b>Cooling-dependent asset</b><small>Use this as enterprise context in HeatShield prioritization.</small></span></label>
-              <div className="enterprise-asset-drawer__position"><span>MAP POSITION</span><strong>{draft.coordinate.lat.toFixed(6)}, {draft.coordinate.lng.toFixed(6)}</strong><small><MapPin size={13} /> Click anywhere inside the highlighted site boundary to change this point.</small></div>
+              <div className="enterprise-asset-drawer__position"><span>MAP POSITION</span><strong>{placementConfirmed ? `${draft.coordinate.lat.toFixed(6)}, ${draft.coordinate.lng.toFixed(6)}` : 'Select a point on the map'}</strong><small><MapPin size={13} /> {placementConfirmed ? 'Location confirmed inside the saved property boundary. Click the map again to move it.' : 'A precise map click is required. HeatShield will not assume the site center is the asset location.'}</small></div>
               <label><span>Notes</span><textarea rows={3} value={draft.notes} onChange={(event) => setDraft({ ...draft, notes: event.target.value })} placeholder="Operating constraints, cooling dependency, maintenance context…" /></label>
-              {assetError && <div className="enterprise-asset-drawer__error"><AlertTriangle size={15} /> {assetError}</div>}
-              <div className="enterprise-asset-drawer__actions"><button type="button" className="button button--secondary" onClick={() => setAssetFormOpen(false)}>Cancel</button><button type="submit" className="button button--primary" disabled={assetSaving}>{assetSaving ? <RefreshCw className="spin" size={16} /> : <Plus size={16} />}{assetSaving ? 'Saving…' : 'Add Asset'}</button></div>
+              {assetError && <div className="enterprise-asset-drawer__error" role="alert"><AlertTriangle size={15} /> {assetError}</div>}
+              <div className="enterprise-asset-drawer__actions"><button type="button" className="button button--secondary" onClick={closeAssetForm}>Cancel</button><button type="submit" className="button button--primary" disabled={assetSaving || !placementConfirmed}>{assetSaving ? <RefreshCw className="spin" size={16} /> : <Plus size={16} />}{assetSaving ? 'Saving…' : placementConfirmed ? 'Add Asset' : 'Place Asset First'}</button></div>
             </form>
           </aside>
         </div>

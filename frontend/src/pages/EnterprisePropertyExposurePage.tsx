@@ -27,6 +27,7 @@ import type { Site, SiteIntelligence, ThermalMapResponse } from '../types/site'
 import '../enterprise-property-exposure.css'
 
 const STORAGE_KEY = 'heatshield:selected-site'
+const HISTORY_MIN_DATE = '2019-01-01'
 type Granularity = 60 | 80 | 100
 
 function localDateString(date: Date) {
@@ -237,6 +238,15 @@ export function EnterprisePropertyExposurePage() {
     ? thermal.maxTemperatureC - thermal.meanTemperatureC
     : null
 
+  const appliedDate = history?.startDate ?? analysisDate
+  const appliedThresholdC = history?.thresholdC ?? thresholdC
+  const appliedGranularity = (history?.granularityMeters ?? granularity) as Granularity
+  const controlsChanged = Boolean(history) && (
+    analysisDate !== appliedDate
+    || Math.abs(thresholdC - appliedThresholdC) > 0.001
+    || granularity !== appliedGranularity
+  )
+
   const topCells = useMemo(() => {
     if (!history) return []
     return [...history.cells]
@@ -268,7 +278,7 @@ export function EnterprisePropertyExposurePage() {
     selectSite(site.id)
   }
 
-  const maxDate = localDateString(new Date())
+  const maxDate = defaultAnalysisDate()
   const historyReady = history && history.dataStatus !== 'configuration_required' && history.dataStatus !== 'unavailable'
 
   return (
@@ -307,36 +317,37 @@ export function EnterprisePropertyExposurePage() {
               </div>
 
               <form onSubmit={submitAnalysis} className="enterprise-exposure-controls__form">
-                <label><span>Completed day</span><div><CalendarDays size={15} /><input type="date" min="2021-01-01" max={maxDate} value={analysisDate} onChange={(event) => setAnalysisDate(event.target.value)} /></div></label>
+                <label><span>Completed day</span><div><CalendarDays size={15} /><input type="date" min={HISTORY_MIN_DATE} max={maxDate} value={analysisDate} onChange={(event) => setAnalysisDate(event.target.value)} /></div></label>
                 <label><span>Heat threshold</span><div><ThermometerSun size={15} /><input type="number" min="20" max="55" step="0.5" value={thresholdC} onChange={(event) => setThresholdC(Number(event.target.value))} /><b>°C</b></div></label>
                 <label><span>Spatial resolution</span><div><Database size={15} /><select value={granularity} onChange={(event) => setGranularity(Number(event.target.value) as Granularity)}><option value={60}>60 m · detailed</option><option value={80}>80 m · balanced</option><option value={100}>100 m · efficient</option></select></div></label>
-                <button type="submit" className="button button--primary" disabled={analysisLoading}>{analysisLoading ? <RefreshCw className="spin" size={16} /> : <Activity size={16} />}{analysisLoading ? 'Running analysis…' : 'Run Exposure Analysis'}</button>
+                <button type="submit" className="button button--primary" disabled={analysisLoading}>{analysisLoading ? <RefreshCw className="spin" size={16} /> : <Activity size={16} />}{analysisLoading ? 'Running analysis…' : controlsChanged ? 'Re-run Analysis' : 'Run Exposure Analysis'}</button>
               </form>
             </section>
 
             <div className="enterprise-exposure-source-note">
               <ShieldCheck size={15} />
-              <span><strong>Evidence separation:</strong> Temperature shows the latest verified FortyGuard TCM spatial layer. Exceedance, persistence and peak-time layers use the selected completed day ({analysisDate}).</span>
+              <span><strong>Evidence separation:</strong> Temperature shows the latest verified FortyGuard TCM spatial layer. Exceedance, persistence and peak-time layers use the last completed analysis day ({appliedDate}).</span>
             </div>
 
+            {controlsChanged && <div className="enterprise-exposure-warning"><AlertTriangle size={16} /><span>Analysis controls changed. The evidence below still reflects {appliedDate}, {appliedThresholdC.toFixed(1)}°C and {appliedGranularity} m. Re-run before using the updated controls for a decision.</span></div>}
             {error && <div className="enterprise-exposure-warning"><AlertTriangle size={16} /><span>{error}</span></div>}
 
             <section className="enterprise-exposure-kpis" aria-label="Property heat exposure metrics">
               <article><span><ThermometerSun size={17} /> Latest Peak Surface</span><strong>{temperature(thermal?.maxTemperatureC)}</strong><small>{thermal?.dataStatus === 'verified' ? formatObserved(thermal.observedAt) : 'No synthetic temperature shown'}</small></article>
               <article><span><Gauge size={17} /> Latest Thermal Spread</span><strong>{thermalSpread == null ? '—' : `${thermalSpread.toFixed(1)}°C`}</strong><small>{hotspotDelta == null ? 'Needs verified TCM cells' : `Hottest cell +${hotspotDelta.toFixed(1)}°C vs mean`}</small></article>
-              <article><span><Flame size={17} /> Mean Exceedance</span><strong>{hours(history?.meanExceedanceHours)}</strong><small>{historyReady ? `Above ${thresholdC.toFixed(1)}°C · ${analysisDate}` : 'Daily layer unavailable'}</small></article>
+              <article><span><Flame size={17} /> Mean Exceedance</span><strong>{hours(history?.meanExceedanceHours)}</strong><small>{historyReady ? `Above ${appliedThresholdC.toFixed(1)}°C · ${appliedDate}` : 'Daily layer unavailable'}</small></article>
               <article><span><Clock3 size={17} /> Max Persistence</span><strong>{hours(history?.maxPersistenceHours)}</strong><small>Longest continuous threshold exceedance</small></article>
               <article><span><Clock3 size={17} /> Common Peak Period</span><strong>{history?.commonPeakPeriodLocal ?? history?.commonPeakHourLocal ?? '—'}</strong><small>{historyReady ? history.timezoneName : 'Daily peak timing unavailable'}</small></article>
               <article><span><Database size={17} /> Exposed Cell Share</span><strong>{exposedCellShare == null ? '—' : `${exposedCellShare}%`}</strong><small>{historyReady ? `${exposedCells} of ${history.cells.length} cells above threshold` : 'Needs verified daily cells'}</small></article>
             </section>
 
             <section className="enterprise-exposure-main-grid">
-              <EnterpriseExposureMap site={selectedSite} thermal={thermal} history={history} metric={metric} onMetricChange={setMetric} analysisDate={analysisDate} />
+              <EnterpriseExposureMap site={selectedSite} thermal={thermal} history={history} metric={metric} onMetricChange={setMetric} analysisDate={appliedDate} />
 
               <aside className="enterprise-exposure-insights panel">
                 <div className="enterprise-exposure-insights__head">
                   <div><span className="enterprise-eyebrow">HEATSHIELD INTERPRETATION</span><h2>Decision Context</h2></div>
-                  <span className={historyReady ? 'ready' : 'pending'}>{historyReady ? 'Evidence ready' : 'Pending'}</span>
+                  <span className={historyReady && !controlsChanged ? 'ready' : 'pending'}>{historyReady && !controlsChanged ? 'Evidence ready' : controlsChanged ? 'Re-run needed' : 'Pending'}</span>
                 </div>
 
                 <section className="enterprise-exposure-decision">
@@ -361,9 +372,9 @@ export function EnterprisePropertyExposurePage() {
                 <section className="enterprise-exposure-provenance">
                   <div className="enterprise-exposure-section-title"><strong>Evidence Provenance</strong><Database size={15} /></div>
                   <div><span>Temperature spatial source</span><strong>{thermal?.dataStatus === 'verified' ? `FortyGuard TCM · ${thermal.tileCount} cells` : 'Unavailable'}</strong></div>
-                  <div><span>Daily analysis date</span><strong>{analysisDate}</strong></div>
-                  <div><span>Threshold</span><strong>{thresholdC.toFixed(1)}°C / {celsiusToFahrenheit(thresholdC).toFixed(1)}°F</strong></div>
-                  <div><span>Resolution</span><strong>{granularity} m</strong></div>
+                  <div><span>Daily analysis date</span><strong>{appliedDate}</strong></div>
+                  <div><span>Threshold</span><strong>{appliedThresholdC.toFixed(1)}°C / {celsiusToFahrenheit(appliedThresholdC).toFixed(1)}°F</strong></div>
+                  <div><span>Resolution</span><strong>{appliedGranularity} m</strong></div>
                   <div><span>Provider requests</span><strong>{history?.providerRequestCount ?? '—'}</strong></div>
                   <div><span>Atmospheric context</span><strong>{intelligence?.conditionSourceLabel ?? intelligence?.conditionSource ?? 'Unavailable'}</strong></div>
                 </section>
