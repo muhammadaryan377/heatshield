@@ -16,6 +16,7 @@ import type {
   WorkerCreate,
 } from '../types/site'
 import type { HistoricalHeatBehaviorRequest, HistoricalHeatBehaviorResponse } from '../types/history'
+import type { EnterpriseAsset, EnterpriseAssetCreate } from '../types/asset'
 
 const BASE_URL = import.meta.env.VITE_API_BASE_URL ?? ''
 
@@ -59,6 +60,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     throw new ApiError(message, response.status)
   }
 
+  if (response.status === 204) return undefined as T
   return (await response.json()) as T
 }
 
@@ -77,6 +79,18 @@ export const api = {
   },
   deleteSiteZone(siteId: string, zoneId: string) {
     return request<Site>(`/api/sites/${siteId}/zones/${zoneId}`, { method: 'DELETE' })
+  },
+  listEnterpriseAssets(siteId: string, signal?: AbortSignal) {
+    return request<EnterpriseAsset[]>(`/api/sites/${siteId}/assets`, { signal })
+  },
+  createEnterpriseAsset(siteId: string, payload: EnterpriseAssetCreate) {
+    return request<EnterpriseAsset>(`/api/sites/${siteId}/assets`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    })
+  },
+  deleteEnterpriseAsset(siteId: string, assetId: string) {
+    return request<void>(`/api/sites/${siteId}/assets/${assetId}`, { method: 'DELETE' })
   },
   getSiteIntelligence(siteId: string, signal?: AbortSignal) {
     return request<SiteIntelligence>(`/api/sites/${siteId}/intelligence`, { signal })
