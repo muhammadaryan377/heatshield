@@ -30,6 +30,9 @@ export default tseslint.config(
       'src/lib/agricultureApi.ts',
       'src/types/agriculture.ts',
     ],
+    linterOptions: {
+      reportUnusedDisableDirectives: 'off',
+    },
     rules: {
       // Agriculture map/provider effects intentionally key off selected IDs and
       // primitive coordinates so Google Maps instances are not recreated when
