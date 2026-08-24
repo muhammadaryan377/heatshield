@@ -1,5 +1,5 @@
-import { Activity, Building2, ChevronRight, ClipboardList, History, MapPin, Plus, ShieldCheck, UserPlus, UsersRound } from 'lucide-react'
-import { useEffect, useMemo, useState } from 'react'
+import { Building2, ChevronRight, MapPin, Plus, ShieldCheck, UserPlus, UsersRound } from 'lucide-react'
+import { useEffect, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { AppShell } from '../components/layout/AppShell'
 import { Topbar } from '../components/layout/Topbar'
@@ -8,21 +8,9 @@ import { OperationalZoneManager } from '../components/site/OperationalZoneManage
 import { SiteMap } from '../components/site/SiteMap'
 import { StatePanel } from '../components/ui/StatePanel'
 import { api } from '../lib/api'
-import type { Site, SiteIntelligence, Worker } from '../types/site'
+import type { Site, Worker } from '../types/site'
 
 const STORAGE_KEY = 'heatshield:selected-site'
-
-function sourceLabel(data: SiteIntelligence | null) {
-  if (!data?.conditions) return 'Waiting for verified conditions'
-  if (data.conditionSource === 'fortyguard') return 'FortyGuard verified'
-  if (data.conditionSource === 'nws') return 'NWS live conditions'
-  return 'Verified conditions'
-}
-
-function riskLabel(data: SiteIntelligence | null) {
-  if (!data?.risk) return 'Pending'
-  return data.risk.level.charAt(0).toUpperCase() + data.risk.level.slice(1)
-}
 
 export function SitesPage() {
   const navigate = useNavigate()
@@ -30,15 +18,12 @@ export function SitesPage() {
   const [sites, setSites] = useState<Site[]>([])
   const [workersBySite, setWorkersBySite] = useState<Record<string, Worker[]>>({})
   const [selectedSiteId, setSelectedSiteId] = useState<string | null>(null)
-  const [intelligence, setIntelligence] = useState<SiteIntelligence | null>(null)
-  const [loadingSites, setLoadingSites] = useState(true)
-  const [loadingSelected, setLoadingSelected] = useState(false)
+  const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [createOpen, setCreateOpen] = useState(false)
 
   useEffect(() => {
     const controller = new AbortController()
-    setLoadingSites(true)
     api.listSites(controller.signal)
       .then(async (loaded) => {
         if (controller.signal.aborted) return
@@ -54,44 +39,30 @@ export function SitesPage() {
         if (!controller.signal.aborted) setWorkersBySite(Object.fromEntries(entries))
       })
       .catch((err: unknown) => { if (!controller.signal.aborted) setError(err instanceof Error ? err.message : 'Could not load sites.') })
-      .finally(() => { if (!controller.signal.aborted) setLoadingSites(false) })
+      .finally(() => { if (!controller.signal.aborted) setLoading(false) })
     return () => controller.abort()
-    // initial route preference only
+    // Initial route preference is resolved once; later site changes are explicit.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   useEffect(() => {
-    if (!selectedSiteId) { setIntelligence(null); return }
+    if (!selectedSiteId) return
     localStorage.setItem(STORAGE_KEY, selectedSiteId)
     setSearchParams({ site: selectedSiteId }, { replace: true })
-    const controller = new AbortController()
-    setLoadingSelected(true)
-    setIntelligence(null)
-    api.getSiteIntelligence(selectedSiteId, controller.signal)
-      .then((data) => { if (!controller.signal.aborted) setIntelligence(data) })
-      .catch((err: unknown) => { if (!controller.signal.aborted) setError(err instanceof Error ? err.message : 'Could not load selected site.') })
-      .finally(() => { if (!controller.signal.aborted) setLoadingSelected(false) })
-    return () => controller.abort()
   }, [selectedSiteId, setSearchParams])
 
   const selectedSite = sites.find((site) => site.id === selectedSiteId) ?? null
   const selectedWorkers = selectedSiteId ? workersBySite[selectedSiteId] ?? [] : []
-  const totalWorkers = useMemo(() => Object.values(workersBySite).reduce((sum, list) => sum + list.filter((worker) => worker.status !== 'offsite').length, 0), [workersBySite])
-
-  const selectSite = (siteId: string) => {
-    setSelectedSiteId(siteId)
-    setError(null)
-  }
+  const approvedZones = selectedSite?.zones.filter((zone) => zone.operationalApproved) ?? []
 
   const siteCreated = (site: Site) => {
-    setSites((current) => [site, ...current])
+    setSites((current) => [site, ...current.filter((item) => item.id !== site.id)])
     setWorkersBySite((current) => ({ ...current, [site.id]: [] }))
     setSelectedSiteId(site.id)
   }
 
   const siteUpdated = (site: Site) => {
     setSites((current) => current.map((item) => item.id === site.id ? site : item))
-    setIntelligence((current) => current && current.site.id === site.id ? { ...current, site } : current)
   }
 
   return (
@@ -99,69 +70,62 @@ export function SitesPage() {
       <Topbar
         sites={sites}
         selectedSiteId={selectedSiteId}
-        observedAt={intelligence?.observedAt}
-        onSiteChange={selectSite}
+        onSiteChange={setSelectedSiteId}
         onCreateSite={() => setCreateOpen(true)}
-        pageTitle="Sites"
-        pageSubtitle="Manage work areas, approved operational zones, staffing and verified environmental status without losing site context."
+        pageTitle="Sites & Zones"
+        pageSubtitle="Define exactly where work happens and which supervisor-approved areas HeatShield is allowed to consider as operational alternatives."
+        showObservation={false}
+        showPlanButton={false}
       />
 
-      <div className="sites-page">
-        {loadingSites ? <StatePanel kind="loading" title="Loading sites" detail="Reading saved work areas and worker assignments…" /> : (
-          <>
-            <section className="sites-summary-grid">
-              <article className="sites-summary-card panel"><span><Building2 size={17} /> Total Sites</span><strong>{sites.length}</strong><small>{sites.filter((site) => site.status === 'active').length} active work areas</small></article>
-              <article className="sites-summary-card panel"><span><UsersRound size={17} /> Active Workers</span><strong>{totalWorkers}</strong><small>Across saved sites</small></article>
-              <article className="sites-summary-card panel"><span><Activity size={17} /> Selected Site Risk</span><strong className={`sites-risk-value sites-risk-value--${intelligence?.risk?.level ?? 'pending'}`}>{riskLabel(intelligence)}</strong><small>{selectedSite?.name ?? 'No site selected'}</small></article>
-              <article className="sites-summary-card panel"><span><ShieldCheck size={17} /> Approved Zones</span><strong>{selectedSite?.zones.filter((zone) => zone.operationalApproved).length ?? 0}</strong><small>Eligible for Better Place</small></article>
-            </section>
+      <main className="wf-final-page wf-sites-page">
+        {loading ? (
+          <StatePanel kind="loading" title="Loading sites and worker assignments" detail="Preparing the operational spatial model…" />
+        ) : !sites.length ? (
+          <section className="wf-command-empty panel"><MapPin size={30} /><div><span className="wf-eyebrow">OPERATIONAL GEOMETRY</span><h2>Create the first site boundary</h2><p>Draw the actual work area first. Workers and approved movement zones stay constrained to this saved geometry.</p></div><button className="button button--primary" onClick={() => setCreateOpen(true)}><Plus size={17} /> Create Site</button></section>
+        ) : (
+          <div className="wf-sites-layout">
+            <aside className="wf-site-directory panel">
+              <div className="wf-section-head"><div><span className="wf-eyebrow">WORK SITES</span><h2>Site library</h2></div><button className="button button--quiet" type="button" onClick={() => setCreateOpen(true)}><Plus size={16} /> Add</button></div>
+              <div className="wf-site-directory__list">{sites.map((site) => {
+                const workers = workersBySite[site.id] ?? []
+                const active = workers.filter((worker) => worker.status === 'active').length
+                const zones = site.zones.filter((zone) => zone.operationalApproved).length
+                return <button key={site.id} type="button" className={site.id === selectedSiteId ? 'active' : ''} onClick={() => setSelectedSiteId(site.id)}>
+                  <span className="wf-site-directory__icon"><Building2 size={17} /></span>
+                  <span><strong>{site.name}</strong><small>{active} active worker{active === 1 ? '' : 's'} · {zones} approved zone{zones === 1 ? '' : 's'}</small></span>
+                  <ChevronRight size={16} />
+                </button>
+              })}</div>
+            </aside>
 
-            {!sites.length ? (
-              <section className="sites-empty panel"><MapPin size={30} /><div><h2>No work sites yet</h2><p>Create a site by drawing its real work boundary on Google Maps. Workers, live conditions and plans stay attached to that site.</p></div><button className="button button--primary" onClick={() => setCreateOpen(true)}><Plus size={17} /> Create Site</button></section>
-            ) : (
-              <div className="sites-layout">
-                <section className="sites-directory panel">
-                  <div className="sites-section-heading"><div><span className="sites-eyebrow">SITE PORTFOLIO</span><h2>Work Sites</h2></div><button className="button button--secondary" onClick={() => setCreateOpen(true)}><Plus size={16} /> Add Site</button></div>
-                  <div className="sites-list">{sites.map((site) => {
-                    const workers = workersBySite[site.id] ?? []
-                    const active = workers.filter((worker) => worker.status !== 'offsite').length
-                    const selected = site.id === selectedSiteId
-                    return <button key={site.id} type="button" className={`sites-list-item${selected ? ' sites-list-item--active' : ''}`} onClick={() => selectSite(site.id)}>
-                      <span className="sites-list-icon"><Building2 size={18} /></span>
-                      <span className="sites-list-copy"><strong>{site.name}</strong><small>{site.address}</small><span>{active} active worker{active === 1 ? '' : 's'} · {site.zones.filter((zone) => zone.operationalApproved).length} approved zone{site.zones.filter((zone) => zone.operationalApproved).length === 1 ? '' : 's'}</span></span>
-                      <span className={`status-pill status-pill--${site.status === 'active' ? 'active' : 'offsite'}`}>{site.status}</span>
-                      <ChevronRight size={17} />
-                    </button>
-                  })}</div>
+            {selectedSite && (
+              <section className="wf-site-workspace">
+                <article className="wf-site-map-card panel">
+                  <div className="wf-section-head">
+                    <div><span className="wf-eyebrow">SELECTED SITE</span><h2>{selectedSite.name}</h2><p>{selectedSite.address}</p></div>
+                    <div className="wf-site-facts"><span><strong>{selectedWorkers.filter((worker) => worker.status === 'active').length}</strong> active workers</span><span><strong>{approvedZones.length}</strong> approved zones</span><span><strong>{selectedSite.polygon.length}</strong> boundary points</span></div>
+                  </div>
+                  <div className="wf-site-map-card__map"><SiteMap site={selectedSite} workers={selectedWorkers} /></div>
+                  <div className="wf-site-map-card__actions">
+                    <button className="button button--secondary" type="button" onClick={() => navigate(`/workers/new?site=${encodeURIComponent(selectedSite.id)}`)}><UserPlus size={15} /> Add Worker</button>
+                    <button className="button button--primary" type="button" onClick={() => navigate(`/workforce/operations?site=${encodeURIComponent(selectedSite.id)}`)}><ShieldCheck size={15} /> Open Operations</button>
+                  </div>
+                </article>
+
+                <section className="wf-zone-purpose panel">
+                  <UsersRound size={19} />
+                  <div><strong>Zones are operational constraints, not heat labels</strong><p>HeatShield only recommends a Better Place when the destination is supervisor-approved and explicitly compatible with the worker&apos;s task. Thermal evidence is evaluated later in Operations.</p></div>
                 </section>
 
-                <section className="sites-detail-column">
-                  {loadingSelected && !intelligence ? <StatePanel kind="loading" title="Loading selected site" detail="Requesting the current site snapshot…" /> : selectedSite && intelligence ? <>
-                    <section className="sites-map panel"><SiteMap site={selectedSite} workers={intelligence.workers} temperatureC={intelligence.conditions?.temperatureC} weatherLabel={intelligence.conditions?.weatherLabel} /></section>
-                    <section className="sites-profile panel">
-                      <div className="sites-section-heading"><div><span className="sites-eyebrow">SELECTED SITE</span><h2>{selectedSite.name}</h2><p>{selectedSite.address}</p></div><span className={`sites-risk-badge sites-risk-badge--${intelligence.risk?.level ?? 'pending'}`}>{riskLabel(intelligence)} risk</span></div>
-                      <div className="sites-profile-grid">
-                        <div><span>Workers assigned</span><strong>{selectedWorkers.length}</strong><small>{selectedWorkers.filter((worker) => worker.status !== 'offsite').length} active</small></div>
-                        <div><span>Temperature</span><strong>{intelligence.conditions ? `${intelligence.conditions.temperatureC.toFixed(1)}°C` : '—'}</strong><small>{sourceLabel(intelligence)}</small></div>
-                        <div><span>Heat index</span><strong>{intelligence.conditions ? `${intelligence.conditions.heatIndexC.toFixed(1)}°C` : '—'}</strong><small>{intelligence.conditions ? `${intelligence.conditions.humidityPercent.toFixed(0)}% humidity` : 'Awaiting verified data'}</small></div>
-                        <div><span>Approved zones</span><strong>{selectedSite.zones.filter((zone) => zone.operationalApproved).length}</strong><small>Supervisor-defined movement options</small></div>
-                      </div>
-                      <div className="sites-actions">
-                        <button className="button button--secondary" onClick={() => navigate(`/workers/new?site=${encodeURIComponent(selectedSite.id)}`)}><UserPlus size={16} /> Add Worker</button>
-                        <button className="button button--primary" onClick={() => navigate(`/plan?site=${encodeURIComponent(selectedSite.id)}`)}><ClipboardList size={16} /> Plan Today</button>
-                        <button className="button button--outline-teal" onClick={() => navigate(`/?site=${encodeURIComponent(selectedSite.id)}`)}><ShieldCheck size={16} /> Live Intelligence</button>
-                        <button className="button button--history" onClick={() => navigate(`/historical-intelligence?site=${encodeURIComponent(selectedSite.id)}`)}><History size={16} /> Historical Intelligence</button>
-                      </div>
-                    </section>
-                    <OperationalZoneManager site={selectedSite} workers={selectedWorkers} onSiteUpdated={siteUpdated} />
-                  </> : null}
-                </section>
-              </div>
+                <OperationalZoneManager site={selectedSite} workers={selectedWorkers} onSiteUpdated={siteUpdated} />
+              </section>
             )}
-            {error && <div className="form-error">{error}</div>}
-          </>
+          </div>
         )}
-      </div>
+
+        {error && <div className="form-error wf-final-error">{error}</div>}
+      </main>
 
       <CreateSiteModal open={createOpen} onClose={() => setCreateOpen(false)} onCreated={siteCreated} />
     </AppShell>

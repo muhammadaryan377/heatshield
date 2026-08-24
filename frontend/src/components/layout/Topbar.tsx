@@ -1,5 +1,5 @@
 import { Bell, Building2, CalendarDays, Plus, Search, Sparkles } from 'lucide-react'
-import { useNavigate } from 'react-router-dom'
+import { useLocation, useNavigate } from 'react-router-dom'
 import type { Site } from '../../types/site'
 
 interface TopbarProps {
@@ -47,6 +47,10 @@ export function Topbar({
   showPlanButton = true,
 }: TopbarProps) {
   const navigate = useNavigate()
+  const location = useLocation()
+  const workforceLegacyPaths = new Set(['/workers/new', '/add-worker', '/plan', '/sites', '/historical-intelligence', '/heat-history', '/reports'])
+  const isWorkforceRoute = location.pathname === '/workforce' || location.pathname.startsWith('/workforce/') || workforceLegacyPaths.has(location.pathname)
+  const planButtonVisible = showPlanButton && !isWorkforceRoute
 
   return (
     <header className={`topbar${pageSubtitle ? ' topbar--with-subtitle' : ''}`}>
@@ -94,7 +98,7 @@ export function Topbar({
 
       {showNotifications && <button className="icon-button" type="button" aria-label="Notifications"><Bell size={20} /></button>}
 
-      {showPlanButton && (
+      {planButtonVisible && (
         <button
           className="button button--primary topbar__plan-button"
           onClick={() => selectedSiteId && navigate(`/plan?site=${encodeURIComponent(selectedSiteId)}`)}
