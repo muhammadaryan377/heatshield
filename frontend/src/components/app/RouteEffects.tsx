@@ -36,7 +36,7 @@ function pageTitle(pathname: string) {
   return 'HeatShield'
 }
 
-export function RouteEffects() {
+export function RouteEffects(): null {
   const location = useLocation()
 
   useEffect(() => {
