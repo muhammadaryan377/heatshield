@@ -1,0 +1,1 @@
+Screen 3 labels the latest TCM temperature timestamp separately from the selected completed-day exposure date. Exceedance, persistence, and time-of-measure values are treated as FortyGuard evidence; HeatShield only derives interpretation and prioritization from those returned values.
