@@ -27,6 +27,8 @@ from app.services.operational_plan import OperationalPlanService
 from app.services.site_intelligence import SiteIntelligenceService
 from app.services.store import HeatShieldStore
 from app.services.thermal_map import ThermalMapService
+from app.services.urban_morphology import UrbanMorphologyService
+from app.urban_models import UrbanMorphologyRequest, UrbanMorphologyResponse
 
 router = APIRouter(prefix='/api')
 
@@ -53,6 +55,10 @@ def fortyguard_profile_service(settings: Settings = Depends(get_settings)) -> Fo
 
 def historical_heat_behavior_service(settings: Settings = Depends(get_settings)) -> HistoricalHeatBehaviorService:
     return HistoricalHeatBehaviorService(settings)
+
+
+def urban_morphology_service(settings: Settings = Depends(get_settings)) -> UrbanMorphologyService:
+    return UrbanMorphologyService(settings)
 
 
 def store(settings: Settings = Depends(get_settings)) -> HeatShieldStore:
@@ -179,6 +185,21 @@ async def historical_heat_behavior(
     svc: HistoricalHeatBehaviorService = Depends(historical_heat_behavior_service),
 ) -> HistoricalHeatBehaviorResponse:
     """Analyze FortyGuard exceedance, persistence and peak-time behavior over a historical date range."""
+    try:
+        return await svc.generate(site_id, payload)
+    except FileNotFoundError:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='Site not found')
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc))
+
+
+@router.post('/sites/{site_id}/urban-morphology', response_model=UrbanMorphologyResponse)
+async def urban_morphology(
+    site_id: str,
+    payload: UrbanMorphologyRequest,
+    svc: UrbanMorphologyService = Depends(urban_morphology_service),
+) -> UrbanMorphologyResponse:
+    """Run optional FortyGuard Premium satellite/street segmentation at a verified district hotspot."""
     try:
         return await svc.generate(site_id, payload)
     except FileNotFoundError:
