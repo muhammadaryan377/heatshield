@@ -158,7 +158,7 @@ export function WorkforceCommandCenterPage() {
               </article>
 
               <article className="wf-attention-queue panel">
-                <div className="wf-section-head"><div><span className="wf-eyebrow">ATTENTION QUEUE</span><h2>Who needs a decision?</h2></div><button className="button button--quiet" type="button" onClick={() => navigate(`/workforce/workforce?site=${encodeURIComponent(siteId ?? '')}`)}>View workforce</button></div>
+                <div className="wf-section-head"><div><span className="wf-eyebrow">ATTENTION QUEUE</span><h2>Who needs a decision?</h2></div><button className="button button--quiet" type="button" onClick={() => navigate(`/workforce/workers?site=${encodeURIComponent(siteId ?? '')}`)}>View workforce</button></div>
                 {attentionWorkers.length ? <div className="wf-attention-list">{attentionWorkers.slice(0, 5).map((worker) => <article key={worker.id}><div className="wf-worker-avatar">{worker.initials}</div><div><strong>{worker.name}</strong><p>{worker.task || worker.role} · {worker.location}</p></div><span className={`wf-choice-badge wf-choice-badge--${worker.risk}`}>{worker.risk}</span></article>)}</div> : <div className="wf-compact-empty wf-compact-empty--good"><CheckCircle2 size={19} /><div><strong>No worker currently needs intervention</strong><p>HeatShield will keep the queue empty until worker context supports a real action.</p></div></div>}
               </article>
             </section>
