@@ -55,6 +55,7 @@ export function EnterpriseThermalOverview({ site, thermal, loading, onRefresh }:
   const infoWindowRef = useRef<google.maps.InfoWindow | null>(null)
   const [mapError, setMapError] = useState<string | null>(null)
   const [mapType, setMapType] = useState<'satellite' | 'roadmap'>('satellite')
+  const [mapVersion, setMapVersion] = useState(0)
 
   const hasMapKey = Boolean(mapsApiKey)
   const hottestTiles = useMemo(() => {
@@ -99,6 +100,7 @@ export function EnterpriseThermalOverview({ site, thermal, loading, onRefresh }:
           site.polygon.forEach((point) => bounds.extend(point))
           if (!bounds.isEmpty()) map.fitBounds(bounds, 34)
         }
+        setMapVersion((value) => value + 1)
       })
       .catch((error: Error) => {
         if (!cancelled) setMapError(error.message)
@@ -120,7 +122,7 @@ export function EnterpriseThermalOverview({ site, thermal, loading, onRefresh }:
 
   useEffect(() => {
     mapRef.current?.setMapTypeId(mapType)
-  }, [mapType])
+  }, [mapType, mapVersion])
 
   useEffect(() => {
     tilePolygonsRef.current.forEach((polygon) => polygon.setMap(null))
@@ -198,7 +200,7 @@ export function EnterpriseThermalOverview({ site, thermal, loading, onRefresh }:
       })
       return marker
     }).filter((marker): marker is google.maps.Marker => Boolean(marker))
-  }, [hottestTiles, site.center, thermal])
+  }, [hottestTiles, mapVersion, site.center, thermal])
 
   const recenter = () => {
     const map = mapRef.current
