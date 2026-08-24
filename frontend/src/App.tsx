@@ -16,6 +16,7 @@ import { SitesPage } from './pages/SitesPage'
 import { UrbanAnalysisPage } from './pages/UrbanAnalysisPage'
 import { UrbanDistrictsPage } from './pages/UrbanDistrictsPage'
 import { UrbanHeatIslandsPage } from './pages/UrbanHeatIslandsPage'
+import { UrbanInterventionsPage } from './pages/UrbanInterventionsPage'
 import { UrbanOverviewPage } from './pages/UrbanOverviewPage'
 
 export default function App() {
@@ -41,6 +42,7 @@ export default function App() {
         <Route path="/urban/districts" element={<UrbanDistrictsPage />} />
         <Route path="/urban/heat-islands" element={<UrbanHeatIslandsPage />} />
         <Route path="/urban/analysis" element={<UrbanAnalysisPage />} />
+        <Route path="/urban/interventions" element={<UrbanInterventionsPage />} />
         <Route path="/urban/*" element={<ModuleLandingPage module="urban" />} />
 
         <Route path="/reports" element={<ReportsPage />} />
