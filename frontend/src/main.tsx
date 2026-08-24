@@ -13,6 +13,7 @@ import './thermal-map.css'
 import './product-polish.css'
 import './fortyguard-intelligence.css'
 import './operational-planner.css'
+import './operational-planner-v2.css'
 import './historical-heat.css'
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
