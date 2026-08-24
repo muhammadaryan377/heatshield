@@ -13,6 +13,7 @@ import { ReportsPage } from './pages/ReportsPage'
 import { SettingsPage } from './pages/SettingsPage'
 import { SiteIntelligencePage } from './pages/SiteIntelligencePage'
 import { SitesPage } from './pages/SitesPage'
+import { UrbanAnalysisPage } from './pages/UrbanAnalysisPage'
 import { UrbanDistrictsPage } from './pages/UrbanDistrictsPage'
 import { UrbanHeatIslandsPage } from './pages/UrbanHeatIslandsPage'
 import { UrbanOverviewPage } from './pages/UrbanOverviewPage'
@@ -39,6 +40,7 @@ export default function App() {
         <Route path="/urban" element={<UrbanOverviewPage />} />
         <Route path="/urban/districts" element={<UrbanDistrictsPage />} />
         <Route path="/urban/heat-islands" element={<UrbanHeatIslandsPage />} />
+        <Route path="/urban/analysis" element={<UrbanAnalysisPage />} />
         <Route path="/urban/*" element={<ModuleLandingPage module="urban" />} />
 
         <Route path="/reports" element={<ReportsPage />} />
