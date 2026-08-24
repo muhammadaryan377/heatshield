@@ -447,7 +447,7 @@ export function AgricultureFarmsPage() {
         )}
       </main>
 
-      <CreateSiteModal open={createOpen} onClose={() => setCreateOpen(false)} onCreated={onFarmCreated} variant="farm" />
+      <CreateSiteModal open={createOpen} onClose={() => setCreateOpen(false)} onCreated={onFarmCreated} />
     </AppShell>
   )
 }
