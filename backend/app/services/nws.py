@@ -7,7 +7,7 @@ from typing import Any
 import httpx
 
 from app.core.config import Settings
-from app.schemas import Site
+from app.schemas import ForecastPoint, Site
 
 
 class NWSAPIError(RuntimeError):
@@ -31,8 +31,9 @@ class NWSObservation:
 class NWSClient:
     """Official National Weather Service fallback for US site-level conditions.
 
-    This service is intentionally used only for current atmospheric conditions.
-    It never fabricates or substitutes FortyGuard spatial thermal tiles.
+    This service is intentionally used only for atmospheric conditions and
+    forecast context. It never fabricates or substitutes FortyGuard spatial
+    thermal tiles.
     """
 
     def __init__(self, settings: Settings):
@@ -86,6 +87,18 @@ class NWSClient:
         return number
 
     @staticmethod
+    def _forecast_temperature_c(value: Any, unit: Any) -> float | None:
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            return None
+        number = float(value)
+        normalized = str(unit).strip().upper() if unit is not None else ''
+        if normalized in {'F', '°F', 'DEGF'}:
+            return (number - 32.0) * 5.0 / 9.0
+        if normalized in {'C', '°C', 'DEGC'} or not normalized:
+            return number
+        return None
+
+    @staticmethod
     def _wind_kph(value: Any) -> float | None:
         number, unit = NWSClient._qv(value)
         if number is None:
@@ -126,10 +139,51 @@ class NWSClient:
         labels = ('N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW')
         return labels[int((degrees % 360) / 45.0 + 0.5) % 8]
 
-    async def fetch_observation(self, *, site: Site) -> NWSObservation:
+    async def _point_properties(self, site: Site) -> dict[str, Any]:
         base = self.settings.nws_base_url.rstrip('/')
         point = await self._get(f'{base}/points/{site.center.lat:.4f},{site.center.lng:.4f}')
-        point_props = point.get('properties') if isinstance(point.get('properties'), dict) else {}
+        props = point.get('properties')
+        if not isinstance(props, dict):
+            raise NWSAPIError('NWS point response did not include valid properties.')
+        return props
+
+    async def fetch_hourly_forecast(self, *, site: Site, limit: int = 12) -> list[ForecastPoint]:
+        """Return official hourly atmospheric temperature context for a US site.
+
+        These values are deliberately site-level atmospheric forecasts; callers
+        must not present them as FortyGuard surface-cell temperatures.
+        """
+        point_props = await self._point_properties(site)
+        forecast_url = point_props.get('forecastHourly')
+        if not isinstance(forecast_url, str) or not forecast_url:
+            raise NWSAPIError('NWS point response did not include an hourly forecast URL.')
+
+        forecast = await self._get(forecast_url)
+        forecast_props = forecast.get('properties') if isinstance(forecast.get('properties'), dict) else {}
+        periods = forecast_props.get('periods')
+        if not isinstance(periods, list):
+            raise NWSAPIError('NWS hourly forecast did not include periods.')
+
+        output: list[ForecastPoint] = []
+        requested = max(1, min(int(limit), 48))
+        for period in periods:
+            if len(output) >= requested:
+                break
+            if not isinstance(period, dict):
+                continue
+            time_value = period.get('startTime')
+            temperature = self._forecast_temperature_c(period.get('temperature'), period.get('temperatureUnit'))
+            if not isinstance(time_value, str) or not time_value or temperature is None:
+                continue
+            output.append(ForecastPoint(time=time_value, temperatureC=round(temperature, 2)))
+
+        if not output:
+            raise NWSAPIError('NWS hourly forecast did not include usable temperature periods.')
+        return output
+
+    async def fetch_observation(self, *, site: Site) -> NWSObservation:
+        base = self.settings.nws_base_url.rstrip('/')
+        point_props = await self._point_properties(site)
         stations_url = point_props.get('observationStations')
         if not isinstance(stations_url, str) or not stations_url:
             raise NWSAPIError('NWS point response did not include observation stations.')

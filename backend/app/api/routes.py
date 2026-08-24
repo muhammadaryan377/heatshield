@@ -29,6 +29,18 @@ from app.services.operational_plan import OperationalPlanService
 from app.services.site_intelligence import SiteIntelligenceService
 from app.services.store import HeatShieldStore
 from app.services.thermal_map import ThermalMapService
+from app.services.urban_before_after import UrbanBeforeAfterService
+from app.services.urban_interventions import UrbanInterventionService
+from app.services.urban_morphology import UrbanMorphologyService
+from app.urban_models import (
+    UrbanBeforeAfterRequest,
+    UrbanBeforeAfterVerification,
+    UrbanIntervention,
+    UrbanInterventionCreate,
+    UrbanInterventionUpdate,
+    UrbanMorphologyRequest,
+    UrbanMorphologyResponse,
+)
 
 router = APIRouter(prefix='/api')
 
@@ -55,6 +67,18 @@ def fortyguard_profile_service(settings: Settings = Depends(get_settings)) -> Fo
 
 def historical_heat_behavior_service(settings: Settings = Depends(get_settings)) -> HistoricalHeatBehaviorService:
     return HistoricalHeatBehaviorService(settings)
+
+
+def urban_morphology_service(settings: Settings = Depends(get_settings)) -> UrbanMorphologyService:
+    return UrbanMorphologyService(settings)
+
+
+def urban_intervention_service(settings: Settings = Depends(get_settings)) -> UrbanInterventionService:
+    return UrbanInterventionService(settings)
+
+
+def urban_before_after_service(settings: Settings = Depends(get_settings)) -> UrbanBeforeAfterService:
+    return UrbanBeforeAfterService(settings)
 
 
 def store(settings: Settings = Depends(get_settings)) -> HeatShieldStore:
@@ -226,6 +250,94 @@ async def historical_heat_behavior(
         return await svc.generate(site_id, payload)
     except FileNotFoundError:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='Site not found')
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc))
+
+
+@router.post('/sites/{site_id}/urban-morphology', response_model=UrbanMorphologyResponse)
+async def urban_morphology(
+    site_id: str,
+    payload: UrbanMorphologyRequest,
+    svc: UrbanMorphologyService = Depends(urban_morphology_service),
+) -> UrbanMorphologyResponse:
+    """Run optional FortyGuard Premium satellite/street segmentation at a verified district hotspot."""
+    try:
+        return await svc.generate(site_id, payload)
+    except FileNotFoundError:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='Site not found')
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc))
+
+
+@router.get('/sites/{site_id}/urban-interventions', response_model=list[UrbanIntervention])
+async def list_urban_interventions(
+    site_id: str,
+    svc: UrbanInterventionService = Depends(urban_intervention_service),
+) -> list[UrbanIntervention]:
+    try:
+        return svc.list(site_id)
+    except FileNotFoundError:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='Site not found')
+
+
+@router.post('/sites/{site_id}/urban-interventions', response_model=UrbanIntervention, status_code=status.HTTP_201_CREATED)
+async def create_urban_intervention(
+    site_id: str,
+    payload: UrbanInterventionCreate,
+    svc: UrbanInterventionService = Depends(urban_intervention_service),
+) -> UrbanIntervention:
+    try:
+        return svc.create(site_id, payload)
+    except FileNotFoundError:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='Site not found')
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc))
+
+
+@router.patch('/sites/{site_id}/urban-interventions/{intervention_id}', response_model=UrbanIntervention)
+async def update_urban_intervention(
+    site_id: str,
+    intervention_id: str,
+    payload: UrbanInterventionUpdate,
+    svc: UrbanInterventionService = Depends(urban_intervention_service),
+) -> UrbanIntervention:
+    try:
+        return svc.update(site_id, intervention_id, payload)
+    except FileNotFoundError:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='Site or intervention not found')
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc))
+
+
+@router.get(
+    '/sites/{site_id}/urban-interventions/{intervention_id}/verifications',
+    response_model=list[UrbanBeforeAfterVerification],
+)
+async def list_urban_before_after_verifications(
+    site_id: str,
+    intervention_id: str,
+    svc: UrbanBeforeAfterService = Depends(urban_before_after_service),
+) -> list[UrbanBeforeAfterVerification]:
+    try:
+        return svc.list(site_id, intervention_id)
+    except FileNotFoundError:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='Site or intervention not found')
+
+
+@router.post(
+    '/sites/{site_id}/urban-interventions/{intervention_id}/verify',
+    response_model=UrbanBeforeAfterVerification,
+)
+async def verify_urban_intervention(
+    site_id: str,
+    intervention_id: str,
+    payload: UrbanBeforeAfterRequest,
+    svc: UrbanBeforeAfterService = Depends(urban_before_after_service),
+) -> UrbanBeforeAfterVerification:
+    try:
+        return await svc.verify(site_id, intervention_id, payload)
+    except FileNotFoundError:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='Site or intervention not found')
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc))
 

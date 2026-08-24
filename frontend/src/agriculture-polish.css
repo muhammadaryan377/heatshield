@@ -1,0 +1,207 @@
+/* Cross-screen finishing layer for the Agriculture module.
+   Individual screen styles still own layout; this file only standardizes
+   interaction, focus, motion, overflow and small responsive details. */
+
+:is(
+  .agri-overview,
+  .agri-farms-page,
+  .agri-field-page,
+  .crop-stress-page,
+  .irrigation-page,
+  .field-work-page,
+  .agri-alerts-page
+) {
+  overflow-x: clip;
+}
+
+:is(
+  .agri-overview,
+  .agri-farms-page,
+  .agri-field-page,
+  .crop-stress-page,
+  .irrigation-page,
+  .field-work-page,
+  .agri-alerts-page,
+  .agri-field-modal
+) :is(button, a, select, input):focus-visible {
+  outline: 3px solid rgba(15, 143, 134, 0.22);
+  outline-offset: 2px;
+}
+
+:is(
+  .agri-context,
+  .agri-farms-toolbar,
+  .agri-field-controls,
+  .crop-stress-controls,
+  .irrigation-controls,
+  .field-work-controls,
+  .agri-alerts-controls,
+  .agri-field-form
+) :is(select, input) {
+  transition: border-color 150ms ease, box-shadow 150ms ease, background-color 150ms ease;
+}
+
+:is(
+  .agri-context,
+  .agri-farms-toolbar,
+  .agri-field-controls,
+  .crop-stress-controls,
+  .irrigation-controls,
+  .field-work-controls,
+  .agri-alerts-controls,
+  .agri-field-form
+) :is(select, input):focus {
+  border-color: rgba(15, 143, 134, 0.58);
+  box-shadow: 0 0 0 3px rgba(15, 143, 134, 0.08);
+}
+
+:is(
+  .agri-overview,
+  .agri-farms-page,
+  .agri-field-page,
+  .crop-stress-page,
+  .irrigation-page,
+  .field-work-page,
+  .agri-alerts-page,
+  .agri-field-modal
+) button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+:is(
+  .agri-action-card,
+  .agri-farms-priority-row,
+  .agri-alert-row,
+  .crop-stress-action-list article,
+  .field-work-window
+) {
+  transition: transform 160ms ease, box-shadow 160ms ease, border-color 160ms ease;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .agri-action-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 10px 28px rgba(31, 59, 52, 0.08);
+  }
+
+  .agri-alert-row:hover {
+    border-color: rgba(15, 143, 134, 0.2);
+    box-shadow: 0 8px 24px rgba(31, 59, 52, 0.055);
+  }
+}
+
+:is(
+  .agri-topbar,
+  .agri-farms-topbar,
+  .agri-field-topbar,
+  .crop-stress-topbar,
+  .irrigation-topbar,
+  .field-work-topbar,
+  .agri-alerts-topbar
+) {
+  backdrop-filter: saturate(1.05);
+}
+
+:is(
+  .agri-map-canvas,
+  .agri-farms-map__canvas,
+  .agri-field-map__canvas,
+  .crop-stress-map__canvas,
+  .irrigation-map__canvas,
+  .field-work-map__canvas,
+  .agri-field-draw-map
+) {
+  isolation: isolate;
+}
+
+:is(
+  .agri-map-state,
+  .agri-field-map__state,
+  .crop-stress-warning,
+  .irrigation-warning,
+  .field-work-warning,
+  .agri-alerts-error,
+  .agri-warning,
+  .agri-field-warning
+) {
+  text-wrap: pretty;
+}
+
+:is(
+  .agri-agent__copy p,
+  .crop-stress-agent-copy,
+  .irrigation-agent p,
+  .field-work-agent p,
+  .agri-alerts-agent p,
+  .agri-alert-row__copy p
+) {
+  text-wrap: pretty;
+}
+
+@media (max-width: 720px) {
+  :is(
+    .agri-overview,
+    .agri-farms-page,
+    .agri-field-page,
+    .crop-stress-page,
+    .irrigation-page,
+    .field-work-page,
+    .agri-alerts-page
+  ) {
+    padding-left: 14px;
+    padding-right: 14px;
+  }
+
+  :is(
+    .agri-topbar,
+    .agri-farms-topbar,
+    .agri-field-topbar,
+    .crop-stress-topbar,
+    .irrigation-topbar,
+    .field-work-topbar,
+    .agri-alerts-topbar
+  ) .button {
+    min-height: 40px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :is(
+    .agri-overview,
+    .agri-farms-page,
+    .agri-field-page,
+    .crop-stress-page,
+    .irrigation-page,
+    .field-work-page,
+    .agri-alerts-page,
+    .agri-field-modal
+  ) *,
+  :is(
+    .agri-overview,
+    .agri-farms-page,
+    .agri-field-page,
+    .crop-stress-page,
+    .irrigation-page,
+    .field-work-page,
+    .agri-alerts-page,
+    .agri-field-modal
+  ) *::before,
+  :is(
+    .agri-overview,
+    .agri-farms-page,
+    .agri-field-page,
+    .crop-stress-page,
+    .irrigation-page,
+    .field-work-page,
+    .agri-alerts-page,
+    .agri-field-modal
+  ) *::after {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+  }
+
+  .spin {
+    animation: none !important;
+  }
+}

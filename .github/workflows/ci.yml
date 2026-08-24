@@ -61,6 +61,37 @@ jobs:
           assert site_response.status_code == 201, site_response.text
           site = site_response.json()
 
+          field_response = client.post(
+              f"/api/sites/{site['id']}/fields",
+              json={
+                  'name': 'CI North Field',
+                  'crop': 'Test crop',
+                  'growthStage': 'Test stage',
+                  'polygon': [
+                      {'lat': 25.2045, 'lng': 55.2703},
+                      {'lat': 25.2049, 'lng': 55.2704},
+                      {'lat': 25.2048, 'lng': 55.2708},
+                  ],
+              },
+          )
+          assert field_response.status_code == 201, field_response.text
+          field = field_response.json()
+          assert field['siteId'] == site['id']
+          assert len(client.get(f"/api/sites/{site['id']}/fields").json()) == 1
+
+          field_profile = client.post(
+              f"/api/sites/{site['id']}/fields/{field['id']}/fortyguard-profile",
+              json={'date': '2024-07-15', 'thresholdC': 35, 'granularityMeters': 100},
+          )
+          assert field_profile.status_code == 200, field_profile.text
+          field_profile_payload = field_profile.json()
+          assert field_profile_payload['dataStatus'] == 'configuration_required'
+          assert field_profile_payload['providerRequestCount'] == 0
+
+          delete_field = client.delete(f"/api/sites/{site['id']}/fields/{field['id']}")
+          assert delete_field.status_code == 204, delete_field.text
+          assert client.get(f"/api/sites/{site['id']}/fields").json() == []
+
           intelligence = client.get(f"/api/sites/{site['id']}/intelligence")
           assert intelligence.status_code == 200, intelligence.text
           payload = intelligence.json()
@@ -147,5 +178,5 @@ jobs:
           )
           assert verification.status_code == 200, verification.text
           assert verification.json()['status'] == 'verification_unavailable'
-          print('HeatShield setup, historical behavior and operational planner smoke test passed')
+          print('HeatShield setup, agriculture fields, historical behavior and operational planner smoke test passed')
           PY

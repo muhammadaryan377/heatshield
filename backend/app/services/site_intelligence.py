@@ -141,6 +141,14 @@ class SiteIntelligenceService:
         thermal_message: str,
     ) -> SiteIntelligence:
         observation = await self.nws.fetch_observation(site=site)
+        try:
+            forecast = await self.nws.fetch_hourly_forecast(site=site, limit=12)
+        except NWSAPIError:
+            # The current observation is still valid when the hourly endpoint is
+            # temporarily unavailable. Forecast context is optional and never
+            # substituted with synthetic values.
+            forecast = []
+
         risk = site_risk(observation.heat_index_c)
         evaluated_workers, high_count = self._with_worker_risk(workers, observation.heat_index_c)
         station = observation.station_name or observation.station_id or 'NWS station'
@@ -171,6 +179,7 @@ class SiteIntelligenceService:
             risk=risk,
             workers=evaluated_workers,
             highExposureCount=high_count,
+            forecast=forecast,
             nextAction=self._next_action(evaluated_workers, risk, 'NWS'),
         )
 

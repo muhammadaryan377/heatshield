@@ -17,6 +17,15 @@ import type {
 } from '../types/site'
 import type { HistoricalHeatBehaviorRequest, HistoricalHeatBehaviorResponse } from '../types/history'
 import type { EnterpriseAsset, EnterpriseAssetCreate } from '../types/asset'
+import type {
+  UrbanBeforeAfterRequest,
+  UrbanBeforeAfterVerification,
+  UrbanIntervention,
+  UrbanInterventionCreate,
+  UrbanInterventionStatus,
+  UrbanMorphologyRequest,
+  UrbanMorphologyResponse,
+} from '../types/urban'
 
 const BASE_URL = import.meta.env.VITE_API_BASE_URL ?? ''
 
@@ -115,6 +124,40 @@ export const api = {
       body: JSON.stringify(payload),
       signal,
     })
+  },
+  generateUrbanMorphology(siteId: string, payload: UrbanMorphologyRequest, signal?: AbortSignal) {
+    return request<UrbanMorphologyResponse>(`/api/sites/${siteId}/urban-morphology`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+      signal,
+    })
+  },
+  listUrbanInterventions(siteId: string, signal?: AbortSignal) {
+    return request<UrbanIntervention[]>(`/api/sites/${siteId}/urban-interventions`, { signal })
+  },
+  createUrbanIntervention(siteId: string, payload: UrbanInterventionCreate) {
+    return request<UrbanIntervention>(`/api/sites/${siteId}/urban-interventions`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    })
+  },
+  updateUrbanInterventionStatus(siteId: string, interventionId: string, status: UrbanInterventionStatus) {
+    return request<UrbanIntervention>(`/api/sites/${siteId}/urban-interventions/${interventionId}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ status }),
+    })
+  },
+  listUrbanBeforeAfterVerifications(siteId: string, interventionId: string, signal?: AbortSignal) {
+    return request<UrbanBeforeAfterVerification[]>(
+      `/api/sites/${siteId}/urban-interventions/${interventionId}/verifications`,
+      { signal },
+    )
+  },
+  verifyUrbanIntervention(siteId: string, interventionId: string, payload: UrbanBeforeAfterRequest, signal?: AbortSignal) {
+    return request<UrbanBeforeAfterVerification>(
+      `/api/sites/${siteId}/urban-interventions/${interventionId}/verify`,
+      { method: 'POST', body: JSON.stringify(payload), signal },
+    )
   },
   generateOperationalPlanner(siteId: string, payload: OperationalPlannerRequest, signal?: AbortSignal) {
     return request<OperationalHeatPlan>(`/api/sites/${siteId}/operational-planner`, {
