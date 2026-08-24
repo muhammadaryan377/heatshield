@@ -18,6 +18,14 @@ import type {
 import type { HistoricalHeatBehaviorRequest, HistoricalHeatBehaviorResponse } from '../types/history'
 import type { EnterpriseAsset, EnterpriseAssetCreate } from '../types/asset'
 import type {
+  FortyGuardAdvancedSnapshot,
+  FortyGuardAdvancedSnapshotRequest,
+  FortyGuardHeatIntelligenceRequest,
+  FortyGuardHeatIntelligenceStatus,
+  FortyGuardHeatIntelligenceSubmission,
+  FortyGuardUsageSummary,
+} from '../types/fortyguard-advanced'
+import type {
   UrbanBeforeAfterRequest,
   UrbanBeforeAfterVerification,
   UrbanIntervention,
@@ -71,6 +79,21 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
   if (response.status === 204) return undefined as T
   return (await response.json()) as T
+}
+
+async function downloadBlob(path: string): Promise<Blob> {
+  const response = await fetch(`${BASE_URL}${path}`, { headers: { Accept: 'application/pdf' } })
+  if (!response.ok) {
+    let message = `Request failed with status ${response.status}`
+    try {
+      const body = (await response.json()) as { detail?: string }
+      if (body.detail) message = body.detail
+    } catch {
+      // Keep the HTTP status when the response body is not JSON.
+    }
+    throw new ApiError(message, response.status)
+  }
+  return response.blob()
 }
 
 export const api = {
@@ -194,5 +217,27 @@ export const api = {
       `/api/sites/${siteId}/actions/hydration-reminder`,
       { method: 'POST' },
     )
+  },
+  generateFortyGuardAdvancedSnapshot(siteId: string, payload: FortyGuardAdvancedSnapshotRequest, signal?: AbortSignal) {
+    return request<FortyGuardAdvancedSnapshot>(`/api/sites/${siteId}/fortyguard/advanced-snapshot`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+      signal,
+    })
+  },
+  submitFortyGuardHeatIntelligence(siteId: string, payload: FortyGuardHeatIntelligenceRequest) {
+    return request<FortyGuardHeatIntelligenceSubmission>(`/api/sites/${siteId}/fortyguard/heat-intelligence`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    })
+  },
+  getFortyGuardHeatIntelligenceStatus(activityId: string, signal?: AbortSignal) {
+    return request<FortyGuardHeatIntelligenceStatus>(`/api/fortyguard/heat-intelligence/${activityId}/status`, { signal })
+  },
+  downloadFortyGuardHeatIntelligence(activityId: string) {
+    return downloadBlob(`/api/fortyguard/heat-intelligence/${activityId}/download`)
+  },
+  getFortyGuardUsage(signal?: AbortSignal) {
+    return request<FortyGuardUsageSummary>('/api/fortyguard/usage', { signal })
   },
 }
