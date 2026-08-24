@@ -38,6 +38,13 @@ interface SiteScreening {
   completedAt: string | null
 }
 
+interface AttentionItem {
+  site: Site
+  title: string
+  detail: string
+  tone: 'danger' | 'warning' | 'neutral'
+}
+
 const emptyScreening = (): SiteScreening => ({ intelligence: null, thermal: null, loading: false, error: null, completedAt: null })
 
 function formatTemperature(value?: number | null) {
@@ -187,15 +194,27 @@ export function EnterpriseSitesPage() {
     return risk === 'high' || risk === 'extreme'
   }).length
 
-  const attentionItems = useMemo(() => {
-    return sites.flatMap((site) => {
+  const attentionItems = useMemo<AttentionItem[]>(() => {
+    const items: AttentionItem[] = []
+    sites.forEach((site) => {
       const screening = screenings[site.id]
-      if (!geometryReady(site)) return [{ site, title: 'Boundary incomplete', detail: 'Property geometry is not ready for spatial screening.', tone: 'danger' as const }]
-      if (!screening?.completedAt) return [{ site, title: 'Baseline screening pending', detail: 'Run a verified spatial screening for this site.', tone: 'neutral' as const }]
-      if (screening.thermal?.dataStatus !== 'verified') return [{ site, title: 'Spatial evidence unavailable', detail: screening.thermal?.message ?? screening.error ?? 'No verified cells returned.', tone: 'warning' as const }]
-      if (screening.intelligence?.fallbackActive) return [{ site, title: 'Atmospheric fallback active', detail: 'Condition context is fallback; spatial evidence remains FortyGuard-only.', tone: 'warning' as const }]
-      return []
-    }).slice(0, 5)
+      if (!geometryReady(site)) {
+        items.push({ site, title: 'Boundary incomplete', detail: 'Property geometry is not ready for spatial screening.', tone: 'danger' })
+        return
+      }
+      if (!screening?.completedAt) {
+        items.push({ site, title: 'Baseline screening pending', detail: 'Run a verified spatial screening for this site.', tone: 'neutral' })
+        return
+      }
+      if (screening.thermal?.dataStatus !== 'verified') {
+        items.push({ site, title: 'Spatial evidence unavailable', detail: screening.thermal?.message ?? screening.error ?? 'No verified cells returned.', tone: 'warning' })
+        return
+      }
+      if (screening.intelligence?.fallbackActive) {
+        items.push({ site, title: 'Atmospheric fallback active', detail: 'Condition context is fallback; spatial evidence remains FortyGuard-only.', tone: 'warning' })
+      }
+    })
+    return items.slice(0, 5)
   }, [screenings, sites])
 
   const selectSite = useCallback((siteId: string) => {
