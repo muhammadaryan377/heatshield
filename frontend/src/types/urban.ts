@@ -50,7 +50,7 @@ export interface UrbanInterventionEvidence {
   cellId: string
   latitude: number
   longitude: number
-  cellPolygon?: Coordinate[]
+  cellPolygon: Coordinate[]
   baselineObservedAt: string
   baselineTemperatureC: number
   districtMeanTemperatureC: number
@@ -67,6 +67,10 @@ export interface UrbanInterventionEvidence {
   dominantClasses: string[]
 }
 
+export type UrbanInterventionCreateEvidence = Omit<UrbanInterventionEvidence, 'cellPolygon'> & {
+  cellPolygon?: Coordinate[]
+}
+
 export interface UrbanInterventionCreate {
   type: UrbanInterventionType
   title: string
@@ -76,7 +80,7 @@ export interface UrbanInterventionCreate {
   rationale: string
   mechanism: string
   measurementPlan: string
-  evidence: UrbanInterventionEvidence
+  evidence: UrbanInterventionCreateEvidence
 }
 
 export interface UrbanIntervention {
