@@ -143,8 +143,6 @@ class UrbanInterventionService:
 
     def create(self, site_id: str, payload: UrbanInterventionCreate) -> UrbanIntervention:
         site = self.store.get_site(site_id)
-        evidence_point = Coordinate(latitude=payload.evidence.latitude, longitude=payload.evidence.longitude)
-        # Coordinate uses lat/lng aliases through CamelModel; construct explicitly for clarity.
         evidence_point = Coordinate(lat=payload.evidence.latitude, lng=payload.evidence.longitude)
         if not self._point_in_polygon(evidence_point, site.polygon):
             raise ValueError('The intervention target must be inside the selected district boundary.')
