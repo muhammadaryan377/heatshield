@@ -1,3 +1,5 @@
+import type { Coordinate, ThermalMapResponse } from './site'
+
 export interface UrbanMorphologyRequest {
   latitude: number
   longitude: number
@@ -48,6 +50,7 @@ export interface UrbanInterventionEvidence {
   cellId: string
   latitude: number
   longitude: number
+  cellPolygon: Coordinate[]
   baselineObservedAt: string
   baselineTemperatureC: number
   districtMeanTemperatureC: number
@@ -92,4 +95,44 @@ export interface UrbanIntervention {
   createdAt: string
   updatedAt: string
   completedAt?: string | null
+}
+
+export interface UrbanBeforeAfterRequest {
+  granularityMeters: 60 | 80 | 100
+  localTimeToleranceMinutes: number
+}
+
+export type UrbanBeforeAfterStatus = 'verified' | 'context_only' | 'not_ready' | 'unavailable' | 'configuration_required'
+export type UrbanBeforeAfterInterpretation =
+  | 'relative_cooling_signal'
+  | 'relative_warming_signal'
+  | 'no_clear_change'
+  | 'not_comparable'
+
+export interface UrbanBeforeAfterVerification {
+  id?: string | null
+  siteId: string
+  interventionId: string
+  generatedAt: string
+  dataStatus: UrbanBeforeAfterStatus
+  interpretation: UrbanBeforeAfterInterpretation
+  evidenceStrength: 'strong' | 'limited' | 'insufficient'
+  baselineObservedAt: string
+  baselineTemperatureC: number
+  baselineDistrictMeanC: number
+  baselineAnomalyC: number
+  afterObservedAt?: string | null
+  afterTemperatureC?: number | null
+  afterDistrictMeanC?: number | null
+  afterAnomalyC?: number | null
+  rawTemperatureChangeC?: number | null
+  anomalyChangeC?: number | null
+  localClockDifferenceMinutes?: number | null
+  localTimeToleranceMinutes: number
+  timeMatched: boolean
+  afterObservationAfterCompletion: boolean
+  targetCellMatched: boolean
+  completionTimestamp?: string | null
+  afterThermal?: ThermalMapResponse | null
+  message: string
 }
