@@ -1,18 +1,123 @@
 .worker-popup-overlay-shell {
   position: absolute;
   z-index: 80;
-  width: 292px;
+  width: 272px;
+  max-width: calc(100% - 24px);
   pointer-events: auto;
-  filter: drop-shadow(0 18px 32px rgba(16, 39, 46, .22));
+  filter: drop-shadow(0 16px 28px rgba(16, 39, 46, .22));
 }
 
 .worker-popup-overlay-shell .worker-map-popup {
   width: 100%;
+  box-sizing: border-box;
+  padding: 10px 11px 9px;
   border: 1px solid rgba(220, 229, 231, .98);
-  border-radius: 16px;
+  border-radius: 14px;
   box-shadow: none;
   position: relative;
   overflow: visible;
+}
+
+/* Compact the worker card so the map can keep it above the worker even after
+   zoom/pan changes instead of forcing the card below or clipping its actions. */
+.worker-popup-overlay-shell .worker-map-popup__header {
+  grid-template-columns: 31px 1fr;
+  gap: 8px;
+  margin-bottom: 7px;
+  padding-right: 27px;
+}
+
+.worker-popup-overlay-shell .worker-map-popup__avatar {
+  width: 31px;
+  height: 31px;
+  border-radius: 10px;
+}
+
+.worker-popup-overlay-shell .worker-map-popup__avatar::before {
+  width: 10px;
+  height: 10px;
+  top: 5px;
+  left: 10px;
+}
+
+.worker-popup-overlay-shell .worker-map-popup__avatar::after {
+  width: 17px;
+  height: 8px;
+  left: 6px;
+  bottom: 4px;
+}
+
+.worker-popup-overlay-shell .worker-map-popup__header strong {
+  font-size: 10.5px;
+}
+
+.worker-popup-overlay-shell .worker-map-popup__header small {
+  font-size: 8.2px;
+}
+
+.worker-popup-overlay-shell .worker-map-popup__metrics {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  border-radius: 9px;
+}
+
+.worker-popup-overlay-shell .worker-map-popup__metrics > div {
+  min-height: 34px;
+  display: grid;
+  align-content: center;
+  gap: 2px;
+  padding: 5px 8px;
+  border-bottom: 1px solid #edf1f2;
+}
+
+.worker-popup-overlay-shell .worker-map-popup__metrics > div:nth-child(odd) {
+  border-right: 1px solid #edf1f2;
+}
+
+.worker-popup-overlay-shell .worker-map-popup__metrics > div:nth-last-child(-n + 2) {
+  border-bottom: 0;
+}
+
+.worker-popup-overlay-shell .worker-map-popup__metrics span {
+  font-size: 7.7px;
+}
+
+.worker-popup-overlay-shell .worker-map-popup__metrics strong {
+  max-width: 100%;
+  font-size: 9px;
+  text-align: left;
+}
+
+.worker-popup-overlay-shell .worker-map-popup__risk {
+  min-height: 18px;
+  padding: 0 7px;
+  justify-self: start;
+}
+
+.worker-popup-overlay-shell .worker-map-popup__recommendation {
+  gap: 3px;
+  margin-top: 7px;
+  padding-top: 7px;
+}
+
+.worker-popup-overlay-shell .worker-map-popup__recommendation span {
+  font-size: 7.8px;
+}
+
+.worker-popup-overlay-shell .worker-map-popup__recommendation strong {
+  font-size: 8.7px;
+  line-height: 1.25;
+}
+
+.worker-popup-overlay-shell .worker-map-popup__actions {
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.worker-popup-overlay-shell .worker-map-popup__actions button {
+  min-height: 30px;
+  border-radius: 7px;
+  font-size: 8.4px;
 }
 
 .worker-popup-overlay-shell::after {
@@ -41,18 +146,18 @@
 
 .worker-map-popup__close {
   position: absolute;
-  top: 10px;
-  right: 10px;
+  top: 7px;
+  right: 7px;
   z-index: 4;
-  width: 28px;
-  height: 28px;
+  width: 25px;
+  height: 25px;
   border: 0;
-  border-radius: 8px;
+  border-radius: 7px;
   display: grid;
   place-items: center;
   background: transparent;
   color: #66767c;
-  font-size: 22px;
+  font-size: 20px;
   line-height: 1;
   cursor: pointer;
 }
@@ -62,8 +167,14 @@
   color: #2e4147;
 }
 
+/* The canvas already clips exactly to the site polygon. A stronger blend makes
+   the verified-mean context visible in the polygon areas that do not contain
+   an individual FortyGuard cell, so the whole site reads as thermal coverage. */
 .thermal-canvas-overlay--full-site {
   pointer-events: none;
+  opacity: 1;
+  mix-blend-mode: multiply;
+  filter: saturate(1.55) contrast(1.08);
 }
 
 .thermal-summary__coverage {
@@ -96,7 +207,15 @@
 
 @media (max-width: 760px) {
   .worker-popup-overlay-shell {
-    width: min(276px, calc(100vw - 38px));
+    width: min(258px, calc(100vw - 30px));
+  }
+
+  .worker-popup-overlay-shell .worker-map-popup {
+    padding: 9px 9px 8px;
+  }
+
+  .worker-popup-overlay-shell .worker-map-popup__metrics > div {
+    min-height: 32px;
   }
 
   .thermal-legend--coverage > small {
