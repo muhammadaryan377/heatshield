@@ -14,6 +14,7 @@ import { SettingsPage } from './pages/SettingsPage'
 import { SiteIntelligencePage } from './pages/SiteIntelligencePage'
 import { SitesPage } from './pages/SitesPage'
 import { UrbanAnalysisPage } from './pages/UrbanAnalysisPage'
+import { UrbanBeforeAfterPage } from './pages/UrbanBeforeAfterPage'
 import { UrbanDistrictsPage } from './pages/UrbanDistrictsPage'
 import { UrbanHeatIslandsPage } from './pages/UrbanHeatIslandsPage'
 import { UrbanInterventionsPage } from './pages/UrbanInterventionsPage'
@@ -43,6 +44,7 @@ export default function App() {
         <Route path="/urban/heat-islands" element={<UrbanHeatIslandsPage />} />
         <Route path="/urban/analysis" element={<UrbanAnalysisPage />} />
         <Route path="/urban/interventions" element={<UrbanInterventionsPage />} />
+        <Route path="/urban/before-after" element={<UrbanBeforeAfterPage />} />
         <Route path="/urban/*" element={<ModuleLandingPage module="urban" />} />
 
         <Route path="/reports" element={<ReportsPage />} />
