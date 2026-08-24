@@ -1,6 +1,7 @@
 import { PanelLeftOpen } from 'lucide-react'
 import { useState, type PropsWithChildren } from 'react'
 import { Sidebar } from './Sidebar'
+import './module-navigation.css'
 
 const SIDEBAR_STORAGE_KEY = 'heatshield:sidebar-hidden'
 
