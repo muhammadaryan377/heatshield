@@ -1,5 +1,6 @@
 import { BrowserRouter, Route, Routes } from 'react-router-dom'
 import { AddWorkerPage } from './pages/AddWorkerPage'
+import { AgricultureCropHeatStressPage } from './pages/AgricultureCropHeatStressPage'
 import { AgricultureFarmsPage } from './pages/AgricultureFarmsPage'
 import { AgricultureFieldsPage } from './pages/AgricultureFieldsPage'
 import { AgricultureOverviewPage } from './pages/AgricultureOverviewPage'
@@ -30,6 +31,7 @@ export default function App() {
         <Route path="/agriculture" element={<AgricultureOverviewPage />} />
         <Route path="/agriculture/farms" element={<AgricultureFarmsPage />} />
         <Route path="/agriculture/fields" element={<AgricultureFieldsPage />} />
+        <Route path="/agriculture/crop-heat-stress" element={<AgricultureCropHeatStressPage />} />
         <Route path="/agriculture/*" element={<ModuleLandingPage module="agriculture" />} />
         <Route path="/urban/*" element={<ModuleLandingPage module="urban" />} />
 
