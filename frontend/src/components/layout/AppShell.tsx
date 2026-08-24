@@ -4,12 +4,18 @@ import { Sidebar } from './Sidebar'
 
 const SIDEBAR_STORAGE_KEY = 'heatshield:sidebar-hidden'
 
+export type HeatShieldModule = 'workforce' | 'enterprise' | 'agriculture' | 'urban' | 'global'
+
 function initialSidebarHidden() {
   if (typeof window === 'undefined') return false
   return window.localStorage.getItem(SIDEBAR_STORAGE_KEY) === 'true'
 }
 
-export function AppShell({ children }: PropsWithChildren) {
+interface AppShellProps extends PropsWithChildren {
+  module?: HeatShieldModule
+}
+
+export function AppShell({ children, module = 'workforce' }: AppShellProps) {
   const [sidebarHidden, setSidebarHidden] = useState(initialSidebarHidden)
 
   const setHidden = (hidden: boolean) => {
@@ -19,7 +25,7 @@ export function AppShell({ children }: PropsWithChildren) {
 
   return (
     <div className={`app-shell${sidebarHidden ? ' app-shell--sidebar-hidden' : ''}`}>
-      <Sidebar hidden={sidebarHidden} onHide={() => setHidden(true)} />
+      <Sidebar module={module} hidden={sidebarHidden} onHide={() => setHidden(true)} />
 
       {sidebarHidden && (
         <button
