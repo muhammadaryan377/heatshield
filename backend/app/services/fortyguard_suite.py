@@ -36,14 +36,12 @@ def _number(value: Any, index: int = 0) -> float | None:
     if isinstance(candidate, bool):
         return None
     if isinstance(candidate, (int, float)):
-        return float(candidate)
+        parsed = float(candidate)
+        return None if parsed <= -9000 else parsed
     if isinstance(candidate, str):
         try:
             parsed = float(candidate)
-            # Sentinel values used by environmental feeds should not be shown as real measurements.
-            if parsed <= -9000:
-                return None
-            return parsed
+            return None if parsed <= -9000 else parsed
         except ValueError:
             return None
     return None
@@ -57,7 +55,7 @@ def _data_url(value: Any) -> str | None:
     if not isinstance(value, str) or not value.strip():
         return None
     cleaned = value.strip()
-    if cleaned.startswith('data:image/'):
+    if cleaned.startswith('data:image/') or cleaned.startswith('https://') or cleaned.startswith('http://'):
         return cleaned
     return f'data:image/png;base64,{cleaned}'
 
@@ -75,27 +73,56 @@ def _segments(value: Any) -> dict[str, float]:
 
 def _status_from_error(exc: Exception) -> str:
     message = str(exc).casefold()
-    if 'http 403' in message or 'premium' in message or 'insufficient plan' in message:
+    if '403' in message or 'premium' in message or 'insufficient plan' in message or 'not included' in message:
         return 'premium_required'
     return 'unavailable'
 
 
-def _first_dict(value: Any) -> dict[str, Any]:
-    if isinstance(value, dict):
-        return value
-    if isinstance(value, list):
-        for item in value:
-            if isinstance(item, dict):
-                return item
-    return {}
+def _case_get(data: dict[str, Any], *keys: str) -> Any:
+    for key in keys:
+        if key in data:
+            return data[key]
+    lowered = {str(key).casefold(): value for key, value in data.items()}
+    for key in keys:
+        if key.casefold() in lowered:
+            return lowered[key.casefold()]
+    return None
+
+
+def _float_list(value: Any) -> list[float]:
+    if not isinstance(value, list):
+        return []
+    output: list[float] = []
+    for item in value:
+        parsed = _number(item)
+        if parsed is not None:
+            output.append(parsed)
+    return output
+
+
+def _heatmap_statistics(provider_payload: dict[str, Any]) -> tuple[float | None, list[float], dict[str, Any], dict[str, Any]]:
+    stats = provider_payload.get('heatmap_stats')
+    if not isinstance(stats, dict):
+        return None, [], {}, {}
+    temperature_stats = _case_get(stats, 'Temperature_stats', 'temperature_stats')
+    temperature_stats = temperature_stats if isinstance(temperature_stats, dict) else {}
+    std_dev = _number(_case_get(temperature_stats, 'Standard_deviation', 'standard_deviation', 'std_dev'))
+    overall = _float_list(_case_get(stats, 'Overall_temperature_distribution', 'overall_temperature_distribution'))
+    normal = _case_get(stats, 'Normal_temperature_distribution', 'normal_temperature_distribution')
+    frequency = _case_get(stats, 'Temperature_frequency', 'temperature_frequency')
+    return (
+        std_dev,
+        overall,
+        normal if isinstance(normal, dict) else {},
+        frequency if isinstance(frequency, dict) else {},
+    )
 
 
 def _usage_number(data: dict[str, Any], *keys: str) -> float | None:
     for key in keys:
-        if key in data:
-            parsed = _number(data.get(key))
-            if parsed is not None:
-                return parsed
+        parsed = _number(data.get(key))
+        if parsed is not None:
+            return parsed
     return None
 
 
@@ -117,12 +144,11 @@ def get_cached_heat_intelligence_report(report_id: str) -> bytes | None:
 
 
 class FortyGuardSuiteService:
-    """Expose FortyGuard capabilities without fabricating provider evidence.
+    """Expose the wider FortyGuard API without fabricating provider evidence.
 
-    Premium-only endpoints degrade to a clear ``premium_required`` state. Base64
-    imagery is returned only after provider completion. Heat Intelligence signed
-    URLs are consumed server-side and replaced with a short-lived HeatShield
-    report id so the temporary provider URL is never sent to the browser.
+    Premium-only endpoints degrade to ``premium_required``. Base64 imagery is
+    normalized for the browser. Heat Intelligence signed URLs are consumed
+    server-side and replaced with a short-lived HeatShield report id.
     """
 
     def __init__(self, settings: Settings):
@@ -160,20 +186,22 @@ class FortyGuardSuiteService:
         parameters = location.get('parameters') if isinstance(location.get('parameters'), dict) else {}
         solar = location.get('solar_irradiance') if isinstance(location.get('solar_irradiance'), dict) else {}
         clear_sky = solar.get('clear_sky') if isinstance(solar.get('clear_sky'), dict) else {}
-
-        available = sum(
-            value is not None
-            for value in (
-                _number(parameters.get('wet_bulb_temperature_celsius')),
-                _number(parameters.get('aqi_us')),
-                _number(clear_sky.get('ghi')),
-                _number(parameters.get('precipitation_mm')),
-            )
+        std_dev, overall_distribution, normal_distribution, temperature_frequency = _heatmap_statistics(
+            observation.provider_payload
         )
+
+        extended_values = (
+            _number(parameters.get('wet_bulb_temperature_celsius')),
+            _number(parameters.get('aqi_us')),
+            _number(clear_sky.get('ghi')),
+            _number(parameters.get('precipitation_mm')),
+            _number(parameters.get('co2_ppm')),
+        )
+        extended_count = sum(value is not None for value in extended_values)
 
         return EnvironmentalContextResponse(
             siteId=site.id,
-            dataStatus='verified' if available >= 2 else 'partial',
+            dataStatus='verified' if extended_count >= 2 else 'partial',
             observedAt=observation.observed_at,
             timezoneName=observation.timezone_name,
             activityId=_text(observation.provider_payload.get('environment_activity_id')),
@@ -198,12 +226,16 @@ class FortyGuardSuiteService:
             solarDni=_number(clear_sky.get('dni')),
             solarDhi=_number(clear_sky.get('dhi')),
             solarDescription=_text(solar.get('description')),
+            temperatureStdDevC=std_dev,
+            overallTemperatureDistribution=overall_distribution,
+            normalTemperatureDistribution=normal_distribution,
+            temperatureFrequency=temperature_frequency,
             message=(
-                'FortyGuard environmental parameters are verified for the same temperature observation.'
-                if available >= 2
-                else 'Core FortyGuard heat metrics are verified; some premium environmental parameters were not returned.'
+                'FortyGuard environmental parameters and map statistics are tied to the same matched heat observation.'
+                if extended_count >= 2
+                else 'Core FortyGuard heat metrics are verified; the API plan returned only a subset of extended environmental parameters.'
             ),
-            cached=not request.forceRefresh,
+            cached=False,
         )
 
     @staticmethod
@@ -215,23 +247,25 @@ class FortyGuardSuiteService:
     ) -> SegmentationView:
         if street_key:
             view = result.get(street_key) if isinstance(result.get(street_key), dict) else {}
+            has_output = bool(view.get('original_image') or view.get('segmented_image') or view.get('segments'))
             return SegmentationView(
-                status='verified' if view else 'unavailable',
+                status='verified' if has_output else 'unavailable',
                 activityId=activity_id,
                 imageDataUrl=_data_url(view.get('original_image')),
                 segmentedImageDataUrl=_data_url(view.get('segmented_image')),
                 imageDate=_text(view.get('image_date')),
                 segments=_segments(view.get('segments')),
                 legend=view.get('image_legend') if isinstance(view.get('image_legend'), dict) else {},
-                message=None if view else f'FortyGuard did not return the {street_key} street-view payload.',
+                message=None if has_output else f'FortyGuard did not return the {street_key} street-view payload.',
             )
 
         segmentation = result.get('segmentation') if isinstance(result.get('segmentation'), dict) else {}
         originals = result.get('orignal_image')
         original = originals[0] if isinstance(originals, list) and originals else originals
         image_year = result.get('image_year')
+        has_output = bool(original or segmentation.get('image_content') or segmentation.get('segments'))
         return SegmentationView(
-            status='verified' if segmentation else 'unavailable',
+            status='verified' if has_output else 'unavailable',
             activityId=activity_id,
             imageDataUrl=_data_url(original),
             segmentedImageDataUrl=_data_url(segmentation.get('image_content')),
@@ -239,7 +273,7 @@ class FortyGuardSuiteService:
             segments=_segments(segmentation.get('segments')),
             legend=segmentation.get('image_legend') if isinstance(segmentation.get('image_legend'), dict) else {},
             processingTimeSeconds=_number(segmentation.get('processing_time_seconds')),
-            message=None if segmentation else 'FortyGuard did not return satellite segmentation output.',
+            message=None if has_output else 'FortyGuard did not return satellite segmentation output.',
         )
 
     async def physical_context(
@@ -290,8 +324,8 @@ class FortyGuardSuiteService:
                 satellite_result = await self.fortyguard._wait(satellite_activity)
                 satellite = self._segmentation_view(satellite_result, activity_id=satellite_activity)
             except FortyGuardAPIError as exc:
-                status = _status_from_error(exc)
-                satellite = SegmentationView(status=status, activityId=satellite_activity, message=str(exc))
+                layer_status = _status_from_error(exc)
+                satellite = SegmentationView(status=layer_status, activityId=satellite_activity, message=str(exc))
                 messages.append(f'Satellite: {exc}')
 
         if request.includeStreetView:
@@ -309,16 +343,16 @@ class FortyGuardSuiteService:
                 if request.streetBackView:
                     street_back = self._segmentation_view(street_result, activity_id=street_activity, street_key='back')
             except FortyGuardAPIError as exc:
-                status = _status_from_error(exc)
-                street_front = SegmentationView(status=status, activityId=street_activity, message=str(exc))
+                layer_status = _status_from_error(exc)
+                street_front = SegmentationView(status=layer_status, activityId=street_activity, message=str(exc))
                 messages.append(f'Street view: {exc}')
 
         statuses = [item.status for item in (satellite, street_front, street_back) if item is not None]
-        if statuses and all(status == 'verified' for status in statuses):
+        if statuses and all(item == 'verified' for item in statuses):
             data_status = 'verified'
-        elif any(status == 'verified' for status in statuses):
+        elif any(item == 'verified' for item in statuses):
             data_status = 'partial'
-        elif any(status == 'premium_required' for status in statuses):
+        elif any(item == 'premium_required' for item in statuses):
             data_status = 'premium_required'
         else:
             data_status = 'unavailable'
@@ -375,8 +409,11 @@ class FortyGuardSuiteService:
                 response = await client.get(download_link)
                 response.raise_for_status()
                 content = response.content
+
             if not content or len(content) > _MAX_REPORT_BYTES:
                 raise FortyGuardAPIError('FortyGuard Heat Intelligence PDF was empty or exceeded the safe download limit.')
+            if not content.lstrip().startswith(b'%PDF'):
+                raise FortyGuardAPIError('FortyGuard Heat Intelligence download did not contain a valid PDF.')
 
             report_id = uuid4().hex
             _REPORT_CACHE[report_id] = (datetime.now(timezone.utc), content)
@@ -388,7 +425,7 @@ class FortyGuardSuiteService:
                 downloadPath=f'/api/fortyguard/reports/{report_id}',
                 observedAt=observation.observed_at,
                 analysis=list(request.analysis),
-                message='FortyGuard Heat Intelligence report is ready. The provider signed URL was consumed server-side.',
+                message='FortyGuard Heat Intelligence report is ready. The temporary provider URL was consumed server-side.',
             )
         except (FortyGuardAPIError, httpx.HTTPError) as exc:
             return HeatIntelligenceResponse(
@@ -433,6 +470,5 @@ class FortyGuardSuiteService:
             creditsLimit=_usage_number(data, 'credits_limit', 'monthly_credits', 'credit_limit', 'creditsLimit'),
             creditsResetDate=_usage_text(data, 'credits_reset_date', 'reset_date', 'creditsResetDate'),
             activityBreakdown=breakdown if isinstance(breakdown, dict) else {},
-            raw=data,
             message='FortyGuard credit usage retrieved from the provider system endpoint.',
         )
