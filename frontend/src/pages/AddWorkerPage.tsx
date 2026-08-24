@@ -30,6 +30,22 @@ const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY ?? ''
 const STORAGE_KEY = 'heatshield:selected-site'
 
 type WorkerDraft = Omit<WorkerCreate, 'coordinate'>
+type WorkIntensity = NonNullable<WorkerCreate['workIntensity']>
+
+const TASK_OPTIONS = [
+  'Roofing',
+  'Loading / unloading',
+  'Material handling',
+  'Concrete work',
+  'Excavation',
+  'Landscaping',
+  'Welding',
+  'Electrical work',
+  'Equipment operation',
+  'Inspection',
+  'Maintenance',
+  'Supervision',
+]
 
 function makeWorkerCode() {
   const suffix = `${Date.now()}`.slice(-6)
@@ -82,6 +98,34 @@ function displayStatus(value: WorkerStatus) {
   return 'Active'
 }
 
+function intensityLabel(value: WorkIntensity | undefined) {
+  if (value === 'heavy') return 'High'
+  if (value === 'light') return 'Low'
+  return 'Moderate'
+}
+
+function inferWorkIntensity(task?: string): WorkIntensity | null {
+  const value = task?.toLowerCase().trim() ?? ''
+  if (!value) return null
+
+  if (/(roof|load|unload|material hand|concrete|excavat|heavy lift|demolition)/.test(value)) return 'heavy'
+  if (/(inspect|supervis|survey|monitor|desk)/.test(value)) return 'light'
+  if (/(landscap|weld|electri|maintenan|equipment|machine|install|repair)/.test(value)) return 'moderate'
+  return null
+}
+
+function formatObservationTime(value?: string | null) {
+  if (!value) return 'Not available'
+  const parsed = new Date(value)
+  if (Number.isNaN(parsed.getTime())) return value
+  return new Intl.DateTimeFormat(undefined, {
+    month: 'short',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(parsed)
+}
+
 function exposureRisk(draft: WorkerDraft, intelligence: SiteIntelligence | null): RiskLevel | null {
   const heatIndex = intelligence?.conditions?.heatIndexC
   if (heatIndex == null) return null
@@ -111,8 +155,7 @@ function exposureRisk(draft: WorkerDraft, intelligence: SiteIntelligence | null)
   return 'low'
 }
 
-function riskLabel(level: RiskLevel | null) {
-  if (!level) return 'Pending live data'
+function riskLabel(level: RiskLevel) {
   return level.charAt(0).toUpperCase() + level.slice(1)
 }
 
@@ -296,7 +339,25 @@ export function AddWorkerPage() {
   const [locationMessage, setLocationMessage] = useState<string | null>(null)
 
   const selectedSite = sites.find((site) => site.id === siteId) ?? null
-  const previewRisk = useMemo(() => exposureRisk(draft, intelligence), [draft, intelligence])
+  const recommendedIntensity = useMemo(() => inferWorkIntensity(draft.task), [draft.task])
+  const previewReady = Boolean(coordinate && draft.task?.trim())
+  const previewRisk = useMemo(
+    () => (previewReady ? exposureRisk(draft, intelligence) : null),
+    [draft, intelligence, previewReady],
+  )
+  const previewLabel = !coordinate
+    ? 'Awaiting placement'
+    : !draft.task?.trim()
+      ? 'Add task to assess'
+      : !intelligence?.conditions
+        ? 'Awaiting verified data'
+        : previewRisk
+          ? riskLabel(previewRisk)
+          : 'Assessment pending'
+  const observedLabel = formatObservationTime(intelligence?.observedAt)
+  const shiftLabel = draft.shiftStart || draft.shiftEnd
+    ? `${draft.shiftStart || '—'} – ${draft.shiftEnd || '—'}`
+    : 'Not set'
 
   useEffect(() => {
     let active = true
@@ -419,7 +480,7 @@ export function AddWorkerPage() {
         observedAt={intelligence?.observedAt}
         onSiteChange={changeSite}
         pageTitle="Add Worker"
-        pageSubtitle="Create a field worker profile and place them precisely on the selected site."
+        pageSubtitle="Create a field worker profile, assign the job context and place the worker inside the selected site."
         showAddSite={false}
       />
 
@@ -446,7 +507,7 @@ export function AddWorkerPage() {
                 )}
 
                 <section className="worker2-form-section">
-                  <SectionTitle number={1} title="Personal Details" detail="Identify the worker and team." />
+                  <SectionTitle number={1} title="Personal Details" detail="Identify the worker and operating team." />
                   <div className="worker2-grid worker2-grid--two">
                     <label><span>Full Name <em>*</em></span><input value={draft.name} onChange={(e) => setField('name', e.target.value)} placeholder="Worker full name" autoFocus /></label>
                     <label><span>Worker ID <em>*</em></span><input value={draft.workerCode ?? ''} onChange={(e) => setField('workerCode', e.target.value)} placeholder="WKR-1047" /></label>
@@ -457,18 +518,31 @@ export function AddWorkerPage() {
                 </section>
 
                 <section className="worker2-form-section">
-                  <SectionTitle number={2} title="Work Assignment" detail="Describe today's task, workload and shift." />
+                  <SectionTitle number={2} title="Work Assignment" detail="Describe today's task, workload, work area and shift." />
                   <div className="worker2-grid worker2-grid--two">
-                    <label className="worker2-span-two"><span>Current Task <em>*</em></span><input value={draft.task ?? ''} onChange={(e) => setField('task', e.target.value)} placeholder="What is this worker doing?" /></label>
-                    <label className="worker2-span-two"><span>Work Area / Zone</span><input value={draft.location} onChange={(e) => setField('location', e.target.value)} placeholder="e.g. Roof Area" /></label>
-                    <div className="worker2-field worker2-span-two"><span>Work Intensity</span><Segmented value={draft.workIntensity ?? 'moderate'} options={[{ value: 'light', label: 'Low' }, { value: 'moderate', label: 'Moderate' }, { value: 'heavy', label: 'High' }]} onChange={(value) => setField('workIntensity', value as WorkerDraft['workIntensity'])} danger /></div>
+                    <label className="worker2-span-two"><span>Current Task <em>*</em></span><input value={draft.task ?? ''} onChange={(e) => setField('task', e.target.value)} placeholder="e.g. Roofing, loading, inspection" list="heatshield-tasks" /></label>
+                    <datalist id="heatshield-tasks">{TASK_OPTIONS.map((task) => <option key={task} value={task} />)}</datalist>
+                    <label className="worker2-span-two"><span>Work Area / Zone</span><input value={draft.location} onChange={(e) => setField('location', e.target.value)} placeholder="e.g. Roof Area" list="heatshield-zones" /></label>
+                    <datalist id="heatshield-zones">{selectedSite.zones.map((zone) => <option key={zone.id} value={zone.name} />)}</datalist>
+                    <div className="worker2-field worker2-span-two">
+                      <span>Work Intensity</span>
+                      <Segmented value={draft.workIntensity ?? 'moderate'} options={[{ value: 'light', label: 'Low' }, { value: 'moderate', label: 'Moderate' }, { value: 'heavy', label: 'High' }]} onChange={(value) => setField('workIntensity', value as WorkerDraft['workIntensity'])} danger />
+                      <div className="worker2-intensity-scale"><span><strong>Low</strong> light movement</span><span><strong>Moderate</strong> continuous physical work</span><span><strong>High</strong> strenuous / heavy work</span></div>
+                      {recommendedIntensity && recommendedIntensity !== draft.workIntensity && (
+                        <div className="worker2-suggestion">
+                          <span>Task-based suggestion: <strong>{intensityLabel(recommendedIntensity)}</strong></span>
+                          <button type="button" onClick={() => setField('workIntensity', recommendedIntensity)}>Apply</button>
+                        </div>
+                      )}
+                    </div>
                     <label><span>Shift Start</span><input type="time" value={draft.shiftStart ?? ''} onChange={(e) => setField('shiftStart', e.target.value)} /></label>
                     <label><span>Shift End</span><input type="time" value={draft.shiftEnd ?? ''} onChange={(e) => setField('shiftEnd', e.target.value)} /></label>
                   </div>
                 </section>
 
                 <section className="worker2-form-section">
-                  <SectionTitle number={3} title="Exposure Context" detail="Capture the controls that change heat exposure." />
+                  <SectionTitle number={3} title="Exposure Context" detail="Capture field controls that modify the worker's exposure." />
+                  <div className="worker2-context-note"><ShieldCheck size={16} /><div><strong>Field inputs</strong><span>HeatShield combines these supervisor-entered controls with the verified FortyGuard observation. They are not provider measurements.</span></div></div>
                   <div className="worker2-grid worker2-grid--one">
                     <div className="worker2-field"><span>Sun Exposure</span><Segmented value={draft.sunExposure ?? 'direct'} options={[{ value: 'indoor', label: 'Indoor' }, { value: 'partial', label: 'Partial' }, { value: 'direct', label: 'Direct' }]} onChange={(value) => setField('sunExposure', value as WorkerDraft['sunExposure'])} danger /></div>
                     <div className="worker2-field"><span>Shade Access</span><Segmented value={draft.shadeAccess ?? 'limited'} options={[{ value: 'available', label: 'Good' }, { value: 'limited', label: 'Limited' }, { value: 'none', label: 'None' }]} onChange={(value) => setField('shadeAccess', value as WorkerDraft['shadeAccess'])} danger /></div>
@@ -489,7 +563,7 @@ export function AddWorkerPage() {
               {error && <div className="worker2-error">{error}</div>}
               <div className="worker2-form-actions">
                 <div className="worker2-save-status">
-                  {coordinate ? <><ShieldCheck size={17} /><span>Location confirmed inside site</span></> : <><MapPin size={17} /><span>Place worker on map before saving</span></>}
+                  {coordinate ? <><ShieldCheck size={17} /><span>Worker location confirmed inside {selectedSite.name}</span></> : <><MapPin size={17} /><span>Place worker on map before saving</span></>}
                 </div>
                 <button type="button" className="button button--secondary" onClick={() => navigate(`/?site=${selectedSite.id}`)}>Cancel</button>
                 <button type="submit" className="button button--primary worker2-save" disabled={!canSave}><Check size={17} /> {saving ? 'Saving…' : 'Save Worker'}</button>
@@ -499,15 +573,20 @@ export function AddWorkerPage() {
             <div className="worker2-right">
               <section className="worker2-map-card panel">
                 <div className="worker2-map-header">
-                  <div><span>Selected Site</span><strong>{selectedSite.name}</strong><small>{selectedSite.address}</small></div>
-                  <div className="worker2-map-header__action"><MapPin size={17} /> Place worker location</div>
+                  <div>
+                    <span>Selected Site</span>
+                    <strong>{selectedSite.name}</strong>
+                    <small>{selectedSite.address || `${selectedSite.center.lat.toFixed(5)}, ${selectedSite.center.lng.toFixed(5)}`}</small>
+                    <small className="worker2-map-site-meta">Center {selectedSite.center.lat.toFixed(5)}, {selectedSite.center.lng.toFixed(5)} · {selectedSite.polygon.length} boundary points</small>
+                  </div>
+                  <div className="worker2-map-header__action"><MapPin size={17} /> Click inside boundary to place</div>
                 </div>
                 <div className="worker2-map-wrap">
                   <WorkerMap site={selectedSite} coordinate={coordinate} onChange={updateCoordinate} onInvalid={() => setLocationMessage('Worker must be placed inside the selected site boundary.')} />
                   <div className={`worker2-location-card${coordinate ? ' is-ready' : ''}`}>
-                    <div className="worker2-location-card__title"><span><UserRound size={16} /></span><div><strong>Worker Location</strong><small>{coordinate ? 'Ready to save' : 'Click map to place'}</small></div></div>
+                    <div className="worker2-location-card__title"><span><UserRound size={16} /></span><div><strong>Worker Location</strong><small>{coordinate ? 'Placement confirmed' : 'Click map to place'}</small></div></div>
                     <div className="worker2-location-row"><span>Lat / Lng</span><strong>{coordinate ? `${coordinate.lat.toFixed(6)}, ${coordinate.lng.toFixed(6)}` : 'Not placed'}</strong></div>
-                    <div className="worker2-location-row"><span>Area</span><strong>{draft.location || 'Site area'}</strong></div>
+                    <div className="worker2-location-row"><span>Work area</span><strong>{draft.location || 'Site area'}</strong></div>
                     <div className="worker2-location-row"><span>Boundary</span><strong>{coordinate ? 'Inside selected site' : 'Placement required'}</strong></div>
                   </div>
                   {locationMessage && <div className="worker2-map-alert">{locationMessage}</div>}
@@ -515,28 +594,58 @@ export function AddWorkerPage() {
               </section>
 
               <section className="worker2-exposure panel">
-                <div className="worker2-card-heading"><div><span className="eyebrow">EXPOSURE PREVIEW</span><h2>Worker heat context</h2></div><span className={`worker2-risk worker2-risk--${previewRisk ?? 'pending'}`}>{riskLabel(previewRisk)}</span></div>
-                <div className="worker2-exposure-grid">
+                <div className="worker2-card-heading">
+                  <div><span className="eyebrow">FORTYGUARD + WORKER CONTEXT</span><h2>Exposure screening preview</h2></div>
+                  <span className={`worker2-risk worker2-risk--${previewRisk ?? 'pending'}`}>{previewLabel}</span>
+                </div>
+
+                <div className="worker2-observation-grid">
                   <div className="worker2-exposure-primary">
                     {intelligence?.conditions ? (
                       <>
                         <ThermometerSun size={30} />
-                        <div><strong>{intelligence.conditions.temperatureC.toFixed(1)}°C</strong><span>Verified site temperature</span></div>
+                        <div><strong>{intelligence.conditions.temperatureC.toFixed(1)}°C</strong><span>FortyGuard site temperature</span></div>
                       </>
                     ) : (
                       <>
                         <ThermometerSun size={30} />
-                        <div><strong>—</strong><span>{loadingContext ? 'Checking live conditions…' : 'No verified observation'}</span></div>
+                        <div><strong>—</strong><span>{loadingContext ? 'Checking verified conditions…' : 'No verified observation'}</span></div>
                       </>
                     )}
                   </div>
                   <div className="worker2-exposure-stat"><span>Heat Index</span><strong>{intelligence?.conditions ? `${intelligence.conditions.heatIndexC.toFixed(1)}°C` : '—'}</strong></div>
+                  <div className="worker2-exposure-stat"><span>Feels Like</span><strong>{intelligence?.conditions ? `${intelligence.conditions.feelsLikeC.toFixed(1)}°C` : '—'}</strong></div>
                   <div className="worker2-exposure-stat"><span>Humidity</span><strong>{intelligence?.conditions ? `${intelligence.conditions.humidityPercent.toFixed(0)}%` : '—'}</strong></div>
-                  <div className="worker2-exposure-stat"><Sun size={18} /><span>Sunlight</span><strong>{draft.sunExposure === 'direct' ? 'Direct' : draft.sunExposure === 'partial' ? 'Partial' : 'Indoor'}</strong></div>
-                  <div className="worker2-exposure-stat"><ShieldCheck size={18} /><span>Shade</span><strong>{draft.shadeAccess === 'available' ? 'Good' : draft.shadeAccess === 'none' ? 'None' : 'Limited'}</strong></div>
-                  <div className="worker2-exposure-stat"><Droplets size={18} /><span>Water</span><strong>{draft.waterAccess ? 'Available' : 'No access'}</strong></div>
                 </div>
-                {!intelligence?.conditions && intelligence?.statusMessage && <p className="worker2-provider-note">{intelligence.statusMessage}</p>}
+
+                <div className="worker2-context-grid">
+                  <div><Sun size={18} /><span>Sun</span><strong>{draft.sunExposure === 'direct' ? 'Direct' : draft.sunExposure === 'partial' ? 'Partial' : 'Indoor'}</strong></div>
+                  <div><ShieldCheck size={18} /><span>Shade</span><strong>{draft.shadeAccess === 'available' ? 'Good' : draft.shadeAccess === 'none' ? 'None' : 'Limited'}</strong></div>
+                  <div><Droplets size={18} /><span>Water</span><strong>{draft.waterAccess ? 'Available' : 'No access'}</strong></div>
+                  <div><ClipboardCheck size={18} /><span>Workload</span><strong>{intensityLabel(draft.workIntensity)}</strong></div>
+                </div>
+
+                <div className="worker2-source-strip">
+                  <div><span>Observation time</span><strong>{observedLabel}</strong></div>
+                  <div><span>Provider status</span><strong>{intelligence?.conditions ? (intelligence.conditions.weatherLabel || 'FortyGuard verified') : 'Unavailable'}</strong></div>
+                  <div><span>Worker shift</span><strong>{shiftLabel}</strong></div>
+                </div>
+
+                <div className={`worker2-assessment-note${previewRisk ? ' is-ready' : ''}`}>
+                  <ClipboardCheck size={17} />
+                  <div>
+                    <strong>{previewLabel}</strong>
+                    <span>
+                      {!coordinate
+                        ? 'Place the worker inside the site boundary before HeatShield calculates a worker-specific screening level.'
+                        : !draft.task?.trim()
+                          ? 'Add the current task so the screening has a real work context.'
+                          : !intelligence?.conditions
+                            ? (intelligence?.statusMessage || 'HeatShield is waiting for a verified FortyGuard observation for this site.')
+                            : 'HeatShield combines the verified FortyGuard heat index with workload, sun exposure, shade and water access. This is an operational screening signal, not a medical diagnosis.'}
+                    </span>
+                  </div>
+                </div>
               </section>
 
               <section className="worker2-recent panel">
