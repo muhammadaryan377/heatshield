@@ -16,7 +16,6 @@ import {
   MapPin,
   PanelLeftClose,
   Repeat2,
-  Settings,
   Sprout,
   Thermometer,
   UserPlus,
@@ -36,8 +35,7 @@ const moduleNavigation = {
       { to: '/plan', label: 'Generate Plan', icon: ClipboardList },
       { to: '/sites', label: 'Sites', icon: MapPin },
       { to: '/historical-intelligence', label: 'Historical Intelligence', icon: History },
-      { to: '/reports', label: 'Reports', icon: BarChart3 },
-      { to: '/settings', label: 'Settings', icon: Settings },
+      { to: '/reports', label: 'Heat Reports', icon: BarChart3 },
     ],
   },
   enterprise: {
@@ -82,8 +80,7 @@ const moduleNavigation = {
     label: 'Platform',
     workspace: 'HeatShield Ops',
     nav: [
-      { to: '/reports', label: 'Reports', icon: BarChart3, end: true },
-      { to: '/settings', label: 'Settings', icon: Settings, end: true },
+      { to: '/reports', label: 'Heat Reports', icon: BarChart3, end: true },
     ],
   },
 } satisfies Record<HeatShieldModule, {
