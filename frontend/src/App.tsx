@@ -1,4 +1,4 @@
-import { BrowserRouter, Route, Routes } from 'react-router-dom'
+import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
 import { AppErrorBoundary } from './components/app/AppErrorBoundary'
 import { RouteEffects } from './components/app/RouteEffects'
 import { AddWorkerPage } from './pages/AddWorkerPage'
@@ -47,6 +47,17 @@ export default function App() {
           <Route path="/workforce/operations" element={<WorkforceOperationsPage />} />
           <Route path="/workforce/site-heat-intelligence" element={<SiteHeatIntelligencePage />} />
           <Route path="/workforce/reports" element={<WorkforceAuditPage />} />
+
+          {/* Workforce legacy aliases: keep older bookmarks and cached links working. */}
+          <Route path="/workforce/home" element={<Navigate to="/workforce" replace />} />
+          <Route path="/workforce/workforce" element={<Navigate to="/workforce/workers" replace />} />
+          <Route path="/workforce/add-worker" element={<Navigate to="/workers/new" replace />} />
+          <Route path="/workforce/generate-plan" element={<Navigate to="/workforce/operations" replace />} />
+          <Route path="/workforce/plan" element={<Navigate to="/workforce/operations" replace />} />
+          <Route path="/workforce/historical-intelligence" element={<Navigate to="/workforce/site-heat-intelligence" replace />} />
+          <Route path="/workforce/heat-history" element={<Navigate to="/workforce/site-heat-intelligence" replace />} />
+          <Route path="/workforce/heat-reports" element={<Navigate to="/workforce/reports" replace />} />
+          <Route path="/workforce/*" element={<Navigate to="/workforce" replace />} />
 
           <Route path="/workers/new" element={<AddWorkerPage />} />
           <Route path="/add-worker" element={<AddWorkerPage />} />
