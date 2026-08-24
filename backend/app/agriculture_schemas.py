@@ -24,9 +24,17 @@ class AgricultureFieldCreate(CamelModel):
     growthStage: str | None = Field(default=None, max_length=120)
     polygon: list[Coordinate]
 
-    @field_validator('name', 'crop', 'growthStage')
+    @field_validator('name')
     @classmethod
-    def clean_text(cls, value: str | None) -> str | None:
+    def clean_name(cls, value: str) -> str:
+        cleaned = value.strip()
+        if len(cleaned) < 2:
+            raise ValueError('Field name must contain at least two non-space characters.')
+        return cleaned
+
+    @field_validator('crop', 'growthStage')
+    @classmethod
+    def clean_optional_text(cls, value: str | None) -> str | None:
         if value is None:
             return None
         cleaned = value.strip()
