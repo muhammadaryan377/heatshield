@@ -21,7 +21,7 @@ const primaryModules = [
     title: 'Workforce Safety',
     description: 'Protect crews with site heat intelligence, worker exposure context, risk decisions and AI-assisted plans.',
     route: '/workforce',
-    artwork: '/module-artwork/workforce.webp',
+    artwork: '/module-artwork/workforce.png',
     capability: 'Workers · Heat Map · Risk · AI Plans',
   },
   {
@@ -29,7 +29,7 @@ const primaryModules = [
     title: 'Enterprise',
     description: 'Turn FortyGuard heat intelligence into property, asset and portfolio-level thermal exposure decisions.',
     route: '/enterprise',
-    artwork: '/module-artwork/enterprise.webp',
+    artwork: '/module-artwork/enterprise.png',
     capability: 'Sites · Assets · Portfolio Risk',
   },
   {
@@ -37,7 +37,7 @@ const primaryModules = [
     title: 'Agriculture',
     description: 'Understand field heat conditions, crop stress and operational timing using the same thermal intelligence core.',
     route: '/agriculture',
-    artwork: '/module-artwork/agriculture.webp',
+    artwork: '/module-artwork/agriculture.png',
     capability: 'Fields · Crop Stress · Irrigation',
   },
   {
@@ -45,7 +45,7 @@ const primaryModules = [
     title: 'Urban Intelligence',
     description: 'Analyze districts, heat islands and interventions with evidence that stays traceable to the thermal source.',
     route: '/urban',
-    artwork: '/module-artwork/urban.webp',
+    artwork: '/module-artwork/urban.png',
     capability: 'Districts · Heat Islands · Interventions',
   },
 ] as const
