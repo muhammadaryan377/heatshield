@@ -1,7 +1,7 @@
 .worker-popup-overlay-shell {
   position: absolute;
   z-index: 80;
-  width: 272px;
+  width: 278px;
   max-width: calc(100% - 24px);
   pointer-events: auto;
   filter: drop-shadow(0 16px 28px rgba(16, 39, 46, .22));
@@ -10,7 +10,7 @@
 .worker-popup-overlay-shell .worker-map-popup {
   width: 100%;
   box-sizing: border-box;
-  padding: 10px 11px 9px;
+  padding: 8px 10px 8px;
   border: 1px solid rgba(220, 229, 231, .98);
   border-radius: 14px;
   box-shadow: none;
@@ -18,56 +18,58 @@
   overflow: visible;
 }
 
-/* Compact the worker card so the map can keep it above the worker even after
-   zoom/pan changes instead of forcing the card below or clipping its actions. */
+/* Keep the map popup short enough that the OverlayView placement calculation
+   can keep it above a worker for normal map zoom levels instead of pushing it
+   below the pin and into the Google attribution area. */
 .worker-popup-overlay-shell .worker-map-popup__header {
-  grid-template-columns: 31px 1fr;
+  grid-template-columns: 30px 1fr;
   gap: 8px;
-  margin-bottom: 7px;
-  padding-right: 27px;
+  margin-bottom: 5px;
+  padding-right: 26px;
 }
 
 .worker-popup-overlay-shell .worker-map-popup__avatar {
-  width: 31px;
-  height: 31px;
-  border-radius: 10px;
+  width: 30px;
+  height: 30px;
+  border-radius: 9px;
 }
 
 .worker-popup-overlay-shell .worker-map-popup__avatar::before {
-  width: 10px;
-  height: 10px;
+  width: 9px;
+  height: 9px;
   top: 5px;
   left: 10px;
 }
 
 .worker-popup-overlay-shell .worker-map-popup__avatar::after {
-  width: 17px;
-  height: 8px;
+  width: 16px;
+  height: 7px;
   left: 6px;
   bottom: 4px;
 }
 
 .worker-popup-overlay-shell .worker-map-popup__header strong {
-  font-size: 10.5px;
+  font-size: 10.3px;
 }
 
 .worker-popup-overlay-shell .worker-map-popup__header small {
-  font-size: 8.2px;
+  font-size: 8px;
 }
 
 .worker-popup-overlay-shell .worker-map-popup__metrics {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  border-radius: 9px;
+  border-radius: 8px;
 }
 
 .worker-popup-overlay-shell .worker-map-popup__metrics > div {
-  min-height: 34px;
+  min-height: 24px;
   display: grid;
   align-content: center;
-  gap: 2px;
-  padding: 5px 8px;
+  gap: 1px;
+  padding: 2px 7px;
   border-bottom: 1px solid #edf1f2;
+  box-sizing: border-box;
 }
 
 .worker-popup-overlay-shell .worker-map-popup__metrics > div:nth-child(odd) {
@@ -79,45 +81,46 @@
 }
 
 .worker-popup-overlay-shell .worker-map-popup__metrics span {
-  font-size: 7.7px;
+  font-size: 7.4px;
 }
 
 .worker-popup-overlay-shell .worker-map-popup__metrics strong {
   max-width: 100%;
-  font-size: 9px;
+  font-size: 8.8px;
+  line-height: 1.1;
   text-align: left;
 }
 
 .worker-popup-overlay-shell .worker-map-popup__risk {
-  min-height: 18px;
-  padding: 0 7px;
+  min-height: 16px;
+  padding: 0 6px;
   justify-self: start;
 }
 
 .worker-popup-overlay-shell .worker-map-popup__recommendation {
-  gap: 3px;
-  margin-top: 7px;
-  padding-top: 7px;
+  gap: 2px;
+  margin-top: 5px;
+  padding-top: 5px;
 }
 
 .worker-popup-overlay-shell .worker-map-popup__recommendation span {
-  font-size: 7.8px;
+  font-size: 7.5px;
 }
 
 .worker-popup-overlay-shell .worker-map-popup__recommendation strong {
-  font-size: 8.7px;
-  line-height: 1.25;
+  font-size: 8.5px;
+  line-height: 1.2;
 }
 
 .worker-popup-overlay-shell .worker-map-popup__actions {
   gap: 6px;
-  margin-top: 8px;
+  margin-top: 6px;
 }
 
 .worker-popup-overlay-shell .worker-map-popup__actions button {
-  min-height: 30px;
+  min-height: 28px;
   border-radius: 7px;
-  font-size: 8.4px;
+  font-size: 8.2px;
 }
 
 .worker-popup-overlay-shell::after {
@@ -146,18 +149,18 @@
 
 .worker-map-popup__close {
   position: absolute;
-  top: 7px;
-  right: 7px;
+  top: 5px;
+  right: 6px;
   z-index: 4;
-  width: 25px;
-  height: 25px;
+  width: 24px;
+  height: 24px;
   border: 0;
   border-radius: 7px;
   display: grid;
   place-items: center;
   background: transparent;
   color: #66767c;
-  font-size: 20px;
+  font-size: 19px;
   line-height: 1;
   cursor: pointer;
 }
@@ -167,14 +170,14 @@
   color: #2e4147;
 }
 
-/* The canvas already clips exactly to the site polygon. A stronger blend makes
-   the verified-mean context visible in the polygon areas that do not contain
-   an individual FortyGuard cell, so the whole site reads as thermal coverage. */
+/* The canvas is clipped to the complete site polygon in SiteMapFinal.tsx.
+   Multiply + saturation makes the verified site-mean wash clearly visible in
+   areas between provider cells, while provider cells stay the stronger layer. */
 .thermal-canvas-overlay--full-site {
   pointer-events: none;
   opacity: 1;
   mix-blend-mode: multiply;
-  filter: saturate(1.55) contrast(1.08);
+  filter: saturate(1.7) contrast(1.1);
 }
 
 .thermal-summary__coverage {
@@ -207,15 +210,15 @@
 
 @media (max-width: 760px) {
   .worker-popup-overlay-shell {
-    width: min(258px, calc(100vw - 30px));
+    width: min(250px, calc(100vw - 28px));
   }
 
   .worker-popup-overlay-shell .worker-map-popup {
-    padding: 9px 9px 8px;
+    padding: 7px 8px;
   }
 
-  .worker-popup-overlay-shell .worker-map-popup__metrics > div {
-    min-height: 32px;
+  .worker-popup-overlay-shell .worker-map-popup__actions button {
+    min-height: 27px;
   }
 
   .thermal-legend--coverage > small {
