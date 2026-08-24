@@ -58,6 +58,10 @@ export interface FortyGuardEnvironmentalContext {
   solarDni?: number | null
   solarDhi?: number | null
   solarDescription?: string | null
+  temperatureStdDevC?: number | null
+  overallTemperatureDistribution: number[]
+  normalTemperatureDistribution: Record<string, unknown>
+  temperatureFrequency: Record<string, unknown>
   message?: string | null
   cached: boolean
 }
@@ -117,7 +121,6 @@ export interface FortyGuardUsage {
   creditsLimit?: number | null
   creditsResetDate?: string | null
   activityBreakdown: Record<string, unknown>
-  raw: Record<string, unknown>
   message?: string | null
 }
 
