@@ -3,6 +3,7 @@ import { AddWorkerPage } from './pages/AddWorkerPage'
 import { EnterpriseAssetsPage } from './pages/EnterpriseAssetsPage'
 import { EnterpriseIndustrialPage } from './pages/EnterpriseIndustrialPage'
 import { EnterpriseOverviewPage } from './pages/EnterpriseOverviewPage'
+import { EnterprisePortfolioRiskPage } from './pages/EnterprisePortfolioRiskPage'
 import { EnterprisePropertyExposurePage } from './pages/EnterprisePropertyExposurePage'
 import { EnterpriseSitesPage } from './pages/EnterpriseSitesPage'
 import { GeneratePlanPage } from './pages/GeneratePlanPage'
@@ -31,6 +32,7 @@ export default function App() {
         <Route path="/enterprise/property-exposure" element={<EnterprisePropertyExposurePage />} />
         <Route path="/enterprise/assets" element={<EnterpriseAssetsPage />} />
         <Route path="/enterprise/industrial" element={<EnterpriseIndustrialPage />} />
+        <Route path="/enterprise/portfolio-risk" element={<EnterprisePortfolioRiskPage />} />
         <Route path="/enterprise/*" element={<ModuleLandingPage module="enterprise" />} />
         <Route path="/agriculture/*" element={<ModuleLandingPage module="agriculture" />} />
         <Route path="/urban/*" element={<ModuleLandingPage module="urban" />} />
