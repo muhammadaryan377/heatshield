@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 
+from app.asset_models import EnterpriseAsset, EnterpriseAssetCreate
 from app.core.config import Settings, get_settings
 from app.historical_models import HistoricalHeatBehaviorRequest, HistoricalHeatBehaviorResponse
 from app.schemas import (
@@ -20,6 +21,7 @@ from app.schemas import (
     Worker,
     WorkerCreate,
 )
+from app.services.enterprise_assets import EnterpriseAssetStore
 from app.services.fortyguard_profile import FortyGuardProfileService
 from app.services.historical_heat_behavior import HistoricalHeatBehaviorService
 from app.services.operational_heat_planner import OperationalHeatPlannerService
@@ -57,6 +59,10 @@ def historical_heat_behavior_service(settings: Settings = Depends(get_settings))
 
 def store(settings: Settings = Depends(get_settings)) -> HeatShieldStore:
     return HeatShieldStore(settings)
+
+
+def enterprise_asset_store(settings: Settings = Depends(get_settings)) -> EnterpriseAssetStore:
+    return EnterpriseAssetStore(settings)
 
 
 @router.get('/health')
@@ -130,6 +136,43 @@ async def create_worker(site_id: str, payload: WorkerCreate, db: HeatShieldStore
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='Site not found')
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc))
+
+
+@router.get('/sites/{site_id}/assets', response_model=list[EnterpriseAsset])
+async def list_enterprise_assets(
+    site_id: str,
+    db: EnterpriseAssetStore = Depends(enterprise_asset_store),
+) -> list[EnterpriseAsset]:
+    try:
+        return db.list_assets(site_id)
+    except FileNotFoundError:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='Site not found')
+
+
+@router.post('/sites/{site_id}/assets', response_model=EnterpriseAsset, status_code=status.HTTP_201_CREATED)
+async def create_enterprise_asset(
+    site_id: str,
+    payload: EnterpriseAssetCreate,
+    db: EnterpriseAssetStore = Depends(enterprise_asset_store),
+) -> EnterpriseAsset:
+    try:
+        return db.create_asset(site_id, payload)
+    except FileNotFoundError:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='Site not found')
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc))
+
+
+@router.delete('/sites/{site_id}/assets/{asset_id}', status_code=status.HTTP_204_NO_CONTENT)
+async def delete_enterprise_asset(
+    site_id: str,
+    asset_id: str,
+    db: EnterpriseAssetStore = Depends(enterprise_asset_store),
+) -> None:
+    try:
+        db.delete_asset(site_id, asset_id)
+    except FileNotFoundError:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='Site or asset not found')
 
 
 @router.get('/sites/{site_id}/intelligence', response_model=SiteIntelligence)
