@@ -1,6 +1,7 @@
 import { BrowserRouter, Route, Routes } from 'react-router-dom'
 import { AddWorkerPage } from './pages/AddWorkerPage'
 import { EnterpriseOverviewPage } from './pages/EnterpriseOverviewPage'
+import { EnterpriseSitesPage } from './pages/EnterpriseSitesPage'
 import { GeneratePlanPage } from './pages/GeneratePlanPage'
 import { HeatHistoryPage } from './pages/HeatHistoryPage'
 import { ModuleLandingPage } from './pages/ModuleLandingPage'
@@ -23,6 +24,7 @@ export default function App() {
         <Route path="/heat-history" element={<HeatHistoryPage />} />
 
         <Route path="/enterprise" element={<EnterpriseOverviewPage />} />
+        <Route path="/enterprise/sites" element={<EnterpriseSitesPage />} />
         <Route path="/enterprise/*" element={<ModuleLandingPage module="enterprise" />} />
         <Route path="/agriculture/*" element={<ModuleLandingPage module="agriculture" />} />
         <Route path="/urban/*" element={<ModuleLandingPage module="urban" />} />
