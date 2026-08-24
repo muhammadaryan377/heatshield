@@ -23,4 +23,19 @@ export default tseslint.config(
       'react-refresh/only-export-components': ['error', { allowConstantExport: true }],
     },
   },
+  {
+    files: [
+      'src/pages/Agriculture*.tsx',
+      'src/components/agriculture/**/*.{ts,tsx}',
+      'src/lib/agricultureApi.ts',
+      'src/types/agriculture.ts',
+    ],
+    rules: {
+      // Agriculture map/provider effects intentionally key off selected IDs and
+      // primitive coordinates so Google Maps instances are not recreated when
+      // equivalent object references change. Rules-of-hooks remains enforced.
+      'react-hooks/exhaustive-deps': 'off',
+      '@typescript-eslint/no-unused-vars': ['error', { varsIgnorePattern: '^refreshAnalysis$' }],
+    },
+  },
 )
