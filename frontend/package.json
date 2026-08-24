@@ -7,7 +7,8 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "preview": "vite preview",
-    "lint": "eslint . --max-warnings=0"
+    "lint": "eslint . --max-warnings=0",
+    "lint:agriculture": "eslint src/pages/Agriculture*.tsx src/components/agriculture src/lib/agricultureApi.ts src/types/agriculture.ts --max-warnings=0"
   },
   "dependencies": {
     "lucide-react": "^0.468.0",

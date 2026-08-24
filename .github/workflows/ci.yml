@@ -4,7 +4,6 @@ on:
   push:
     branches: [main]
   pull_request:
-    branches: [main]
 
 jobs:
   frontend:
@@ -16,9 +15,10 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '24'
       - run: npm install
       - run: npm run build
+      - run: npm run lint:agriculture
 
   backend:
     runs-on: ubuntu-latest
@@ -34,7 +34,7 @@ jobs:
           cache-dependency-path: backend/requirements.txt
       - run: pip install -r requirements.txt
       - run: python -m compileall app
-      - name: Smoke test real setup flow
+      - name: Smoke test real setup and agriculture flow
         env:
           DATABASE_PATH: /tmp/heatshield-ci.db
           HEATSHIELD_USE_FIXTURES: 'false'
@@ -147,5 +147,46 @@ jobs:
           )
           assert verification.status_code == 200, verification.text
           assert verification.json()['status'] == 'verification_unavailable'
-          print('HeatShield setup, historical behavior and operational planner smoke test passed')
+
+          field_payload = {
+              'name': 'CI Field A',
+              'crop': 'Test crop',
+              'growthStage': 'Test stage',
+              'polygon': [
+                  {'lat': 25.20448, 'lng': 55.27032},
+                  {'lat': 25.20504, 'lng': 55.27036},
+                  {'lat': 25.20488, 'lng': 55.27092},
+              ],
+          }
+          field_response = client.post(f"/api/sites/{site['id']}/fields", json=field_payload)
+          assert field_response.status_code == 201, field_response.text
+          field = field_response.json()
+          fields = client.get(f"/api/sites/{site['id']}/fields")
+          assert fields.status_code == 200, fields.text
+          assert [item['id'] for item in fields.json()] == [field['id']]
+
+          field_profile = client.post(
+              f"/api/sites/{site['id']}/fields/{field['id']}/fortyguard-profile",
+              json={'thresholdC': 35, 'granularityMeters': 100},
+          )
+          assert field_profile.status_code == 200, field_profile.text
+          field_profile_payload = field_profile.json()
+          assert field_profile_payload['dataStatus'] == 'configuration_required'
+          assert field_profile_payload['providerRequestCount'] == 0
+
+          preflight = client.options(
+              f"/api/sites/{site['id']}/fields/{field['id']}",
+              headers={
+                  'Origin': 'http://localhost:5173',
+                  'Access-Control-Request-Method': 'DELETE',
+              },
+          )
+          assert preflight.status_code == 200, preflight.text
+          assert 'DELETE' in preflight.headers.get('access-control-allow-methods', '')
+
+          deleted = client.delete(f"/api/sites/{site['id']}/fields/{field['id']}")
+          assert deleted.status_code == 204, deleted.text
+          assert client.get(f"/api/sites/{site['id']}/fields").json() == []
+
+          print('HeatShield workforce, historical, operational planner and agriculture smoke tests passed')
           PY

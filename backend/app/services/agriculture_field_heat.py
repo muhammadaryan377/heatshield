@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from hashlib import sha1
 from typing import Any
 from zoneinfo import ZoneInfo
@@ -21,6 +21,7 @@ from app.services.store import HeatShieldStore
 
 _FIELD_PROFILE_CACHE: dict[str, tuple[datetime, AgricultureFieldHeatProfile]] = {}
 _ANALYTIC_TYPES = ('tcm', 'time_of_measure', 'exceedance', 'persistence')
+_LATEST_DAY_FALLBACKS = 2
 
 
 def _geojson_polygon(points: list[Coordinate]) -> dict[str, Any]:
@@ -170,9 +171,17 @@ def _study_date(site, requested: str | None) -> tuple[str, str]:
     return selected.isoformat(), timezone_name
 
 
-def _cache_key(site_id: str, field_id: str, request: AgricultureFieldHeatRequest, study_date: str) -> str:
-    raw = f'{site_id}|{field_id}|{study_date}|{request.thresholdC:.3f}|{request.granularityMeters}'
+def _cache_key(site_id: str, field_id: str, request: AgricultureFieldHeatRequest, requested_date: str) -> str:
+    raw = f'{site_id}|{field_id}|{requested_date}|{request.thresholdC:.3f}|{request.granularityMeters}'
     return sha1(raw.encode('utf-8')).hexdigest()
+
+
+def _unrequested_layer(analytic_type: str) -> AgricultureFieldHeatLayer:
+    return AgricultureFieldHeatLayer(
+        analyticType=analytic_type,
+        status='unavailable',
+        message='Not requested because no verified field temperature layer was available.',
+    )
 
 
 class AgricultureFieldHeatService:
@@ -232,10 +241,9 @@ class AgricultureFieldHeatService:
     ) -> AgricultureFieldHeatProfile:
         site = self.site_store.get_site(site_id)
         field = self.field_store.get_field(site_id, field_id)
-        study_date_text, timezone_name = _study_date(site, request.date)
-        study_date = date.fromisoformat(study_date_text)
+        requested_date_text, timezone_name = _study_date(site, request.date)
         now = datetime.now(timezone.utc)
-        key = _cache_key(site_id, field_id, request, study_date_text)
+        key = _cache_key(site_id, field_id, request, requested_date_text)
         cached = self._cached(key, now)
         if cached is not None:
             return cached
@@ -247,7 +255,7 @@ class AgricultureFieldHeatService:
                 siteId=site_id,
                 fieldId=field.id,
                 fieldName=field.name,
-                date=study_date_text,
+                date=requested_date_text,
                 timezoneName=timezone_name,
                 thresholdC=request.thresholdC,
                 granularityMeters=request.granularityMeters,
@@ -256,51 +264,100 @@ class AgricultureFieldHeatService:
                 message='FortyGuard API key is not configured. Field heat layers require FortyGuard.',
             )
 
-        results: dict[str, tuple[str | None, dict[str, Any] | None, str | None]] = {}
-        for analytic_type in _ANALYTIC_TYPES:
-            results[analytic_type] = await self._request_layer(
+        requested_date = date.fromisoformat(requested_date_text)
+        candidate_dates = [requested_date]
+        if request.date is None:
+            candidate_dates.extend(requested_date - timedelta(days=offset) for offset in range(1, _LATEST_DAY_FALLBACKS + 1))
+
+        provider_request_count = 0
+        tcm_result_tuple: tuple[str | None, dict[str, Any] | None, str | None] | None = None
+        tcm_layer: AgricultureFieldHeatLayer | None = None
+        effective_date_text = requested_date_text
+        tcm_errors: list[str] = []
+
+        for candidate_date in candidate_dates:
+            candidate_text = candidate_date.isoformat()
+            result_tuple = await self._request_layer(
                 polygon=field.polygon,
-                study_date=study_date_text,
+                study_date=candidate_text,
+                granularity=request.granularityMeters,
+                analytic_type='tcm',
+                threshold_c=request.thresholdC,
+            )
+            if result_tuple[0]:
+                provider_request_count += 1
+            candidate_layer = _layer_summary('tcm', *result_tuple)
+            if candidate_layer.status == 'verified':
+                tcm_result_tuple = result_tuple
+                tcm_layer = candidate_layer
+                effective_date_text = candidate_text
+                break
+            if candidate_layer.message:
+                tcm_errors.append(f'{candidate_text}: {candidate_layer.message}')
+
+        if tcm_layer is None or tcm_result_tuple is None:
+            unavailable_tcm = AgricultureFieldHeatLayer(
+                analyticType='tcm',
+                status='unavailable',
+                message=(
+                    f'No usable FortyGuard field temperature cells were returned for {len(candidate_dates)} checked day(s).'
+                    if request.date is None
+                    else (tcm_errors[-1] if tcm_errors else 'FortyGuard returned no usable field temperature cells.')
+                ),
+            )
+            layers = [
+                unavailable_tcm,
+                _unrequested_layer('time_of_measure'),
+                _unrequested_layer('exceedance'),
+                _unrequested_layer('persistence'),
+            ]
+            profile = AgricultureFieldHeatProfile(
+                siteId=site_id,
+                fieldId=field.id,
+                fieldName=field.name,
+                date=requested_date_text,
+                timezoneName=timezone_name,
+                thresholdC=request.thresholdC,
+                granularityMeters=request.granularityMeters,
+                dataStatus='unavailable',
+                generatedAt=now.isoformat(),
+                providerRequestCount=provider_request_count,
+                layers=layers,
+                message=unavailable_tcm.message,
+            )
+            self._cache(key, now, profile)
+            return profile
+
+        results: dict[str, tuple[str | None, dict[str, Any] | None, str | None]] = {'tcm': tcm_result_tuple}
+        for analytic_type in _ANALYTIC_TYPES[1:]:
+            result_tuple = await self._request_layer(
+                polygon=field.polygon,
+                study_date=effective_date_text,
                 granularity=request.granularityMeters,
                 analytic_type=analytic_type,
                 threshold_c=request.thresholdC,
             )
+            results[analytic_type] = result_tuple
+            if result_tuple[0]:
+                provider_request_count += 1
 
         layers = [_layer_summary(analytic_type, *results[analytic_type]) for analytic_type in _ANALYTIC_TYPES]
         tcm_layer = next(layer for layer in layers if layer.analyticType == 'tcm')
         time_layer = next(layer for layer in layers if layer.analyticType == 'time_of_measure')
         exceedance_layer = next(layer for layer in layers if layer.analyticType == 'exceedance')
         persistence_layer = next(layer for layer in layers if layer.analyticType == 'persistence')
-        request_count = sum(1 for activity_id, _, _ in results.values() if activity_id)
-
-        if tcm_layer.status != 'verified':
-            profile = AgricultureFieldHeatProfile(
-                siteId=site_id,
-                fieldId=field.id,
-                fieldName=field.name,
-                date=study_date_text,
-                timezoneName=timezone_name,
-                thresholdC=request.thresholdC,
-                granularityMeters=request.granularityMeters,
-                dataStatus='unavailable',
-                generatedAt=now.isoformat(),
-                providerRequestCount=request_count,
-                layers=layers,
-                message=tcm_layer.message or 'FortyGuard returned no usable field temperature cells.',
-            )
-            self._cache(key, now, profile)
-            return profile
+        study_date = date.fromisoformat(effective_date_text)
 
         hottest = max(tcm_layer.cells, key=lambda cell: cell.value)
         peak_hour_utc: int | None = None
         if time_layer.status == 'verified' and time_layer.cells:
-            # Match by nearest center because provider tile identifiers can differ across analytic layers.
             def center(cell: AgricultureFieldHeatCell) -> tuple[float, float]:
                 points = cell.polygon[:-1] if len(cell.polygon) > 1 and cell.polygon[0] == cell.polygon[-1] else cell.polygon
                 return (
                     sum(point.lat for point in points) / len(points),
                     sum(point.lng for point in points) / len(points),
                 )
+
             hot_lat, hot_lng = center(hottest)
             closest = min(
                 time_layer.cells,
@@ -321,7 +378,12 @@ class AgricultureFieldHeatService:
 
         missing = [layer.analyticType for layer in layers if layer.status != 'verified']
         status = 'verified' if not missing else 'partial'
-        message = (
+        fallback_note = (
+            f'Current local day had no usable field temperature cells; using the latest verified daily evidence from {effective_date_text}. '
+            if effective_date_text != requested_date_text
+            else ''
+        )
+        layer_note = (
             'Field profile verified across temperature, peak timing, exceedance and persistence.'
             if not missing
             else f"Field temperature is verified; optional layer(s) unavailable: {', '.join(missing)}."
@@ -331,13 +393,13 @@ class AgricultureFieldHeatService:
             siteId=site_id,
             fieldId=field.id,
             fieldName=field.name,
-            date=study_date_text,
+            date=effective_date_text,
             timezoneName=timezone_name,
             thresholdC=request.thresholdC,
             granularityMeters=request.granularityMeters,
             dataStatus=status,
             generatedAt=now.isoformat(),
-            providerRequestCount=request_count,
+            providerRequestCount=provider_request_count,
             minTemperatureC=tcm_layer.minValue,
             meanTemperatureC=tcm_layer.meanValue,
             maxTemperatureC=tcm_layer.maxValue,
@@ -348,7 +410,7 @@ class AgricultureFieldHeatService:
             meanPersistenceHours=persistence_layer.meanValue if persistence_layer.status == 'verified' else None,
             maxPersistenceHours=persistence_layer.maxValue if persistence_layer.status == 'verified' else None,
             layers=layers,
-            message=message,
+            message=f'{fallback_note}{layer_note}',
         )
         self._cache(key, now, profile)
         return profile
