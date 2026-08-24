@@ -1,4 +1,5 @@
 import {
+  Activity,
   ArrowLeft,
   BarChart3,
   Bell,
@@ -48,6 +49,7 @@ const moduleNavigation = {
       { to: '/enterprise/industrial', label: 'Data Center / Industrial', icon: Factory },
       { to: '/enterprise/portfolio-risk', label: 'Portfolio Risk', icon: Layers },
       { to: '/enterprise/reports', label: 'Heat Risk Reports', icon: FileText },
+      { to: '/enterprise/fortyguard-intelligence', label: 'FortyGuard Intelligence', icon: Activity },
     ],
   },
   agriculture: {
