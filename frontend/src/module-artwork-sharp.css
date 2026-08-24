@@ -1,0 +1,64 @@
+.module-card__visual {
+  min-height: 224px;
+  background-repeat: no-repeat !important;
+  background-size: cover !important;
+  background-position: center !important;
+  isolation: isolate;
+}
+
+.module-card--workforce .module-card__visual { background-image: url('/module-artwork-hq/workforce.svg') !important; }
+.module-card--enterprise .module-card__visual { background-image: url('/module-artwork-hq/enterprise.svg') !important; }
+.module-card--agriculture .module-card__visual { background-image: url('/module-artwork-hq/agriculture.svg') !important; }
+.module-card--urban .module-card__visual { background-image: url('/module-artwork-hq/urban.svg') !important; }
+
+.module-card__grid-lines,
+.module-card__ghost-icon {
+  display: none !important;
+}
+
+.module-card__visual::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  background: linear-gradient(180deg, rgba(255,255,255,0) 55%, rgba(255,255,255,.28) 74%, rgba(255,255,255,.94) 100%);
+}
+
+.module-card__icon {
+  z-index: 3;
+  width: 86px;
+  height: 86px;
+  border: 1px solid rgba(255,255,255,.95);
+  background: rgba(255,255,255,.96);
+  box-shadow: 0 14px 34px rgba(33, 61, 70, .16), 0 1px 0 rgba(255,255,255,.9) inset;
+  backdrop-filter: blur(7px);
+}
+
+.module-card--workforce .module-card__icon { color: #15965a; }
+.module-card--enterprise .module-card__icon { color: #177e9a; }
+.module-card--agriculture .module-card__icon { color: #3c9137; }
+.module-card--urban .module-card__icon { color: #7650bd; }
+
+.module-card__source {
+  z-index: 4;
+  left: 14px;
+  bottom: 12px;
+  padding: 6px 9px;
+  background: rgba(255,255,255,.92);
+  border-color: rgba(255,255,255,.96);
+  box-shadow: 0 5px 16px rgba(31, 55, 63, .08);
+}
+
+.module-card:hover .module-card__visual {
+  background-size: 103% auto !important;
+}
+
+@media (max-width: 1180px) {
+  .module-card__visual { min-height: 205px; }
+}
+
+@media (max-width: 760px) {
+  .module-card__visual { min-height: 190px; }
+  .module-card__icon { width: 78px; height: 78px; }
+}
