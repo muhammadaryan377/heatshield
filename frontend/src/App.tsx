@@ -17,12 +17,9 @@ import { EnterprisePortfolioRiskPage } from './pages/EnterprisePortfolioRiskPage
 import { EnterprisePropertyExposurePage } from './pages/EnterprisePropertyExposurePage'
 import { EnterpriseSitesPage } from './pages/EnterpriseSitesPage'
 import { FortyGuardIntelligencePage } from './pages/FortyGuardIntelligencePage'
-import { GeneratePlanPage } from './pages/GeneratePlanPage'
-import { HeatHistoryPage } from './pages/HeatHistoryPage'
 import { ModuleSelectionPage } from './pages/ModuleSelectionPage'
 import { NotFoundPage } from './pages/NotFoundPage'
-import { ReportsPage } from './pages/ReportsPage'
-import { SiteIntelligencePage } from './pages/SiteIntelligencePage'
+import { SiteHeatIntelligencePage } from './pages/SiteHeatIntelligencePage'
 import { SitesPage } from './pages/SitesPage'
 import { UrbanAnalysisPage } from './pages/UrbanAnalysisPage'
 import { UrbanBeforeAfterPage } from './pages/UrbanBeforeAfterPage'
@@ -30,6 +27,10 @@ import { UrbanDistrictsPage } from './pages/UrbanDistrictsPage'
 import { UrbanHeatIslandsPage } from './pages/UrbanHeatIslandsPage'
 import { UrbanInterventionsPage } from './pages/UrbanInterventionsPage'
 import { UrbanOverviewPage } from './pages/UrbanOverviewPage'
+import { WorkforceAuditPage } from './pages/WorkforceAuditPage'
+import { WorkforceCommandCenterPage } from './pages/WorkforceCommandCenterPage'
+import { WorkforceOperationsPage } from './pages/WorkforceOperationsPage'
+import { WorkforcePage } from './pages/WorkforcePage'
 import './agriculture-polish.css'
 
 export default function App() {
@@ -40,14 +41,20 @@ export default function App() {
         <Routes>
           <Route path="/" element={<ModuleSelectionPage />} />
 
-          <Route path="/workforce" element={<SiteIntelligencePage />} />
+          <Route path="/workforce" element={<WorkforceCommandCenterPage />} />
+          <Route path="/workforce/workers" element={<WorkforcePage />} />
+          <Route path="/workforce/sites" element={<SitesPage />} />
+          <Route path="/workforce/operations" element={<WorkforceOperationsPage />} />
+          <Route path="/workforce/site-heat-intelligence" element={<SiteHeatIntelligencePage />} />
+          <Route path="/workforce/reports" element={<WorkforceAuditPage />} />
+
           <Route path="/workers/new" element={<AddWorkerPage />} />
           <Route path="/add-worker" element={<AddWorkerPage />} />
-          <Route path="/plan" element={<GeneratePlanPage />} />
+          <Route path="/plan" element={<WorkforceOperationsPage />} />
           <Route path="/sites" element={<SitesPage />} />
-          <Route path="/historical-intelligence" element={<HeatHistoryPage />} />
-          <Route path="/heat-history" element={<HeatHistoryPage />} />
-          <Route path="/reports" element={<ReportsPage />} />
+          <Route path="/historical-intelligence" element={<SiteHeatIntelligencePage />} />
+          <Route path="/heat-history" element={<SiteHeatIntelligencePage />} />
+          <Route path="/reports" element={<WorkforceAuditPage />} />
 
           <Route path="/enterprise" element={<EnterpriseOverviewPage />} />
           <Route path="/enterprise/sites" element={<EnterpriseSitesPage />} />
