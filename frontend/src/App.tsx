@@ -13,6 +13,7 @@ import { ReportsPage } from './pages/ReportsPage'
 import { SettingsPage } from './pages/SettingsPage'
 import { SiteIntelligencePage } from './pages/SiteIntelligencePage'
 import { SitesPage } from './pages/SitesPage'
+import { UrbanOverviewPage } from './pages/UrbanOverviewPage'
 
 export default function App() {
   return (
@@ -33,6 +34,7 @@ export default function App() {
         <Route path="/agriculture/fields" element={<AgricultureFieldsPage />} />
         <Route path="/agriculture/crop-heat-stress" element={<AgricultureCropHeatStressPage />} />
         <Route path="/agriculture/*" element={<ModuleLandingPage module="agriculture" />} />
+        <Route path="/urban" element={<UrbanOverviewPage />} />
         <Route path="/urban/*" element={<ModuleLandingPage module="urban" />} />
 
         <Route path="/reports" element={<ReportsPage />} />
