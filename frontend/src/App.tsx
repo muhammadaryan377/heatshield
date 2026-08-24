@@ -1,5 +1,6 @@
 import { BrowserRouter, Route, Routes } from 'react-router-dom'
 import { AddWorkerPage } from './pages/AddWorkerPage'
+import { AgricultureOverviewPage } from './pages/AgricultureOverviewPage'
 import { EnterpriseOverviewPage } from './pages/EnterpriseOverviewPage'
 import { GeneratePlanPage } from './pages/GeneratePlanPage'
 import { HeatHistoryPage } from './pages/HeatHistoryPage'
@@ -24,6 +25,7 @@ export default function App() {
 
         <Route path="/enterprise" element={<EnterpriseOverviewPage />} />
         <Route path="/enterprise/*" element={<ModuleLandingPage module="enterprise" />} />
+        <Route path="/agriculture" element={<AgricultureOverviewPage />} />
         <Route path="/agriculture/*" element={<ModuleLandingPage module="agriculture" />} />
         <Route path="/urban/*" element={<ModuleLandingPage module="urban" />} />
 
