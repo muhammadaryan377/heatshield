@@ -3,7 +3,6 @@ import {
   AlertTriangle,
   ArrowRight,
   CheckCircle2,
-  Droplets,
   Filter,
   Gauge,
   MapPin,
@@ -208,7 +207,7 @@ function PortfolioMap({ farms, intelligence, selectedId, onSelect }: {
   return (
     <section className="agri-farms-map panel">
       <div className="agri-farms-section-head">
-        <div><span>PORTFOLIO MAP</span><h2>Farm footprint & heat priority</h2></div>
+        <div><span>PORTFOLIO MAP</span><h2>Farm footprint & operational heat</h2></div>
         <div className="agri-map-risk-legend"><i className="safe" /> Low <i className="warning" /> Medium <i className="danger" /> High</div>
       </div>
       <div className="agri-farms-map__canvas">
@@ -304,12 +303,7 @@ export function AgricultureFarmsPage() {
 
   const totalAcres = useMemo(() => farms.reduce((sum, farm) => sum + (areaAcres(farm) ?? 0), 0), [farms])
   const highRiskCount = useMemo(() => farms.filter((farm) => ['high', 'extreme'].includes(intelligence[farm.id]?.risk?.level ?? '')).length, [farms, intelligence])
-  const irrigationReviewCount = useMemo(() => farms.filter((farm) => {
-    const intel = intelligence[farm.id]
-    const risk = intel?.risk?.level
-    const heatIndex = intel?.conditions?.heatIndexC
-    return risk === 'high' || risk === 'extreme' || (heatIndex != null && heatIndex >= 35)
-  }).length, [farms, intelligence])
+  const operationalReviewCount = useMemo(() => farms.filter((farm) => ['medium', 'high', 'extreme'].includes(intelligence[farm.id]?.risk?.level ?? '')).length, [farms, intelligence])
   const verifiedConditionsCount = useMemo(() => farms.filter((farm) => intelligence[farm.id]?.conditionSource === 'fortyguard').length, [farms, intelligence])
 
   const priorities = useMemo(() => farms
@@ -335,7 +329,7 @@ export function AgricultureFarmsPage() {
       <header className="agri-farms-topbar">
         <div>
           <h1>Farm Portfolio & Operations</h1>
-          <span>Manage farm boundaries, compare heat exposure, and decide which farms need attention first.</span>
+          <span>Manage farm boundaries, compare operational heat context, and decide which farms need attention first.</span>
         </div>
         <div className="agri-farms-topbar__spacer" />
         <div className="agri-core-badge"><span /><div><small>INTELLIGENCE CORE</small><strong>FortyGuard</strong></div></div>
@@ -358,7 +352,7 @@ export function AgricultureFarmsPage() {
           <>
             <section className="agri-farms-toolbar panel">
               <label className="agri-farms-search"><Search size={17} /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search farms by name or location" /></label>
-              <label className="agri-farms-filter"><Filter size={16} /><select value={riskFilter} onChange={(event) => setRiskFilter(event.target.value as 'all' | RiskLevel)}><option value="all">All heat risk</option><option value="extreme">Extreme</option><option value="high">High</option><option value="medium">Medium</option><option value="low">Low</option></select></label>
+              <label className="agri-farms-filter"><Filter size={16} /><select value={riskFilter} onChange={(event) => setRiskFilter(event.target.value as 'all' | RiskLevel)}><option value="all">All operational heat risk</option><option value="extreme">Extreme</option><option value="high">High</option><option value="medium">Medium</option><option value="low">Low</option></select></label>
               <button type="button" className="agri-farms-refresh" onClick={refresh} disabled={intelLoading}><RefreshCw size={15} className={intelLoading ? 'spin' : ''} /> {intelLoading ? 'Refreshing evidence' : 'Refresh intelligence'}</button>
               <button type="button" className="button button--primary" onClick={() => setCreateOpen(true)}><Plus size={16} /> Add Farm</button>
             </section>
@@ -366,8 +360,8 @@ export function AgricultureFarmsPage() {
             <section className="agri-farms-kpis">
               <article><span><Sprout size={17} /> Total Farms</span><strong>{farms.length}</strong><small>{farms.filter((farm) => farm.status === 'active').length} active boundaries</small></article>
               <article><span><Tractor size={17} /> Total Mapped Area</span><strong>{totalAcres > 0 ? `${Math.round(totalAcres).toLocaleString()} ac` : '—'}</strong><small>Calculated from saved polygons</small></article>
-              <article className="danger"><span><ThermometerSun size={17} /> High-Risk Farms</span><strong>{intelLoading ? '…' : highRiskCount}</strong><small>High or extreme current risk</small></article>
-              <article className="warning"><span><Droplets size={17} /> Irrigation Review</span><strong>{intelLoading ? '…' : irrigationReviewCount}</strong><small>Heat-based inspection priority</small></article>
+              <article className="danger"><span><ThermometerSun size={17} /> High Operational Heat</span><strong>{intelLoading ? '…' : highRiskCount}</strong><small>High or extreme site heat-index screening</small></article>
+              <article className="warning"><span><Gauge size={17} /> Operations to Review</span><strong>{intelLoading ? '…' : operationalReviewCount}</strong><small>Medium, high or extreme atmospheric heat context</small></article>
               <article><span><ShieldCheck size={17} /> FortyGuard Conditions</span><strong>{intelLoading ? '…' : `${verifiedConditionsCount}/${farms.length}`}</strong><small>Direct provider condition source</small></article>
             </section>
 
@@ -378,7 +372,7 @@ export function AgricultureFarmsPage() {
               </div>
               <div className="agri-farms-table-wrap">
                 <table className="agri-farms-table">
-                  <thead><tr><th>Farm</th><th>Mapped area</th><th>Current heat risk</th><th>Heat index</th><th>Peak window</th><th>Work timing</th><th>Evidence</th><th /></tr></thead>
+                  <thead><tr><th>Farm</th><th>Mapped area</th><th>Operational heat risk</th><th>Heat index</th><th>Peak window</th><th>Work timing</th><th>Evidence</th><th /></tr></thead>
                   <tbody>
                     {filteredFarms.map((farm) => {
                       const intel = intelligence[farm.id]
@@ -392,7 +386,7 @@ export function AgricultureFarmsPage() {
                           <td><span className={`agri-risk agri-risk--${riskTone(risk)}`}>{riskName(risk)}</span><small>{intel?.risk?.summary ?? (intelLoading ? 'Loading intelligence…' : 'Evidence unavailable')}</small></td>
                           <td><strong>{temp(intel?.conditions?.heatIndexC)}</strong><small>{intel?.conditions ? `${intel.conditions.humidityPercent.toFixed(0)}% RH` : 'No condition reading'}</small></td>
                           <td><strong>{peakWindow}</strong><small>{intel?.risk ? 'Current decision window' : 'Awaiting evidence'}</small></td>
-                          <td><strong>{workWindow(risk)}</strong><small>Heat-based planning context</small></td>
+                          <td><strong>{workWindow(risk)}</strong><small>Atmospheric heat planning context</small></td>
                           <td><strong>{sourceLabel(intel)}</strong><small>{intel?.fallbackActive ? 'Atmospheric fallback active' : intel ? 'Source traceable' : 'Not loaded'}</small></td>
                           <td><Link to={`/agriculture?farm=${farm.id}`} onClick={(event) => event.stopPropagation()}>Open <ArrowRight size={13} /></Link></td>
                         </tr>
@@ -421,8 +415,8 @@ export function AgricultureFarmsPage() {
                       <span className={`agri-priority-rank agri-priority-rank--${riskTone(risk)}`}>{index + 1}</span>
                       <div>
                         <strong>{farm.name}</strong>
-                        <p>{high ? 'Review field operations and irrigation inspection before peak heat.' : risk === 'medium' ? 'Monitor heat trend and keep field work outside the warmest window where practical.' : 'Routine monitor; no elevated heat action indicated by current evidence.'}</p>
-                        <small><Gauge size={13} /> {riskName(risk)} risk {heatIndex != null ? `• Heat index ${temp(heatIndex)}` : ''}</small>
+                        <p>{high ? 'Review exposed field operations before peak heat; open field thermal evidence separately before crop or irrigation decisions.' : risk === 'medium' ? 'Monitor atmospheric heat trend and keep strenuous field work outside the warmer window where practical.' : 'Routine operational monitor; no elevated site heat action indicated by current atmospheric evidence.'}</p>
+                        <small><Gauge size={13} /> {riskName(risk)} operational risk {heatIndex != null ? `• Heat index ${temp(heatIndex)}` : ''}</small>
                       </div>
                       <Link to={`/agriculture?farm=${farm.id}`}>Review <ArrowRight size={13} /></Link>
                     </article>
@@ -434,7 +428,7 @@ export function AgricultureFarmsPage() {
             {selectedFarm && (
               <section className="agri-selected-farm panel">
                 <div className="agri-selected-farm__identity"><span><MapPin size={20} /></span><div><small>SELECTED FARM</small><h2>{selectedFarm.name}</h2><p>{selectedFarm.address}</p></div></div>
-                <div><small>Heat risk</small><strong className={`agri-selected-value agri-selected-value--${riskTone(selectedIntel?.risk?.level)}`}>{riskName(selectedIntel?.risk?.level)}</strong></div>
+                <div><small>Operational heat risk</small><strong className={`agri-selected-value agri-selected-value--${riskTone(selectedIntel?.risk?.level)}`}>{riskName(selectedIntel?.risk?.level)}</strong></div>
                 <div><small>Heat index</small><strong>{temp(selectedIntel?.conditions?.heatIndexC)}</strong></div>
                 <div><small>Mapped area</small><strong>{areaAcres(selectedFarm) == null ? '—' : `${Math.round(areaAcres(selectedFarm) as number).toLocaleString()} ac`}</strong></div>
                 <div><small>Evidence source</small><strong>{sourceLabel(selectedIntel)}</strong></div>
@@ -442,7 +436,7 @@ export function AgricultureFarmsPage() {
               </section>
             )}
 
-            <div className="agri-farms-evidence-note"><AlertTriangle size={15} /><span>Portfolio ranking uses current HeatShield site intelligence and traceable condition evidence. It does not infer crop water quantity or agronomic thresholds that are not configured.</span></div>
+            <div className="agri-farms-evidence-note"><AlertTriangle size={15} /><span>Portfolio ranking is operational atmospheric heat context. Crop and irrigation decisions require field-level FortyGuard thermal evidence plus agronomic inputs; HeatShield does not infer crop water quantity or damage thresholds here.</span></div>
           </>
         )}
       </main>
