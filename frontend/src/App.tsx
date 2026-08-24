@@ -1,6 +1,7 @@
 import { BrowserRouter, Route, Routes } from 'react-router-dom'
 import { AddWorkerPage } from './pages/AddWorkerPage'
 import { EnterpriseAssetsPage } from './pages/EnterpriseAssetsPage'
+import { EnterpriseHeatRiskReportsPage } from './pages/EnterpriseHeatRiskReportsPage'
 import { EnterpriseIndustrialPage } from './pages/EnterpriseIndustrialPage'
 import { EnterpriseOverviewPage } from './pages/EnterpriseOverviewPage'
 import { EnterprisePortfolioRiskPage } from './pages/EnterprisePortfolioRiskPage'
@@ -33,6 +34,7 @@ export default function App() {
         <Route path="/enterprise/assets" element={<EnterpriseAssetsPage />} />
         <Route path="/enterprise/industrial" element={<EnterpriseIndustrialPage />} />
         <Route path="/enterprise/portfolio-risk" element={<EnterprisePortfolioRiskPage />} />
+        <Route path="/enterprise/reports" element={<EnterpriseHeatRiskReportsPage />} />
         <Route path="/enterprise/*" element={<ModuleLandingPage module="enterprise" />} />
         <Route path="/agriculture/*" element={<ModuleLandingPage module="agriculture" />} />
         <Route path="/urban/*" element={<ModuleLandingPage module="urban" />} />
