@@ -161,14 +161,14 @@ class HistoricalHeatBehaviorService:
         else:
             end = today
             start = end - timedelta(days=29)
-        if start < date(2021, 1, 1):
-            raise ValueError('FortyGuard historical analysis starts at 2021-01-01.')
+        if start < date(2019, 1, 1):
+            raise ValueError('FortyGuard historical analysis starts at 2019-01-01.')
         if end > today:
             raise ValueError('Historical analysis cannot end in the future for the selected site.')
         if start > end:
             raise ValueError('Historical startDate must be on or before endDate.')
-        if (end - start).days + 1 > 90:
-            raise ValueError('Historical analysis is limited to 90 days per run to keep the report focused and credit-aware.')
+        if (end - start).days + 1 > 31:
+            raise ValueError('FortyGuard range-of-days heatmap analysis is limited to one month (31 days) per run.')
         return start, end, timezone_name
 
     def _cache_key(self, site_id: str, start: date, end: date, request: HistoricalHeatBehaviorRequest) -> str:

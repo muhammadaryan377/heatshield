@@ -93,6 +93,40 @@ jobs:
           assert history_payload['dayCount'] == 30
           assert round(history_payload['thresholdC'], 1) == 35.0
 
+          # Wider FortyGuard suite must fail closed when a provider key is absent.
+          environment = client.post(
+              f"/api/sites/{site['id']}/fortyguard/environment",
+              json={'forceRefresh': False},
+          )
+          assert environment.status_code == 200, environment.text
+          assert environment.json()['dataStatus'] == 'configuration_required'
+
+          physical = client.post(
+              f"/api/sites/{site['id']}/fortyguard/physical-context",
+              json={
+                  'granularityMeters': 80,
+                  'includeSatellite': True,
+                  'includeStreetView': True,
+                  'streetHorizontalAngle': 0,
+                  'streetVerticalAngle': 0,
+                  'streetBackView': False,
+              },
+          )
+          assert physical.status_code == 200, physical.text
+          assert physical.json()['dataStatus'] == 'configuration_required'
+
+          report = client.post(
+              f"/api/sites/{site['id']}/fortyguard/heat-intelligence",
+              json={'analysis': ['geographic', 'environmental']},
+          )
+          assert report.status_code == 200, report.text
+          assert report.json()['dataStatus'] == 'configuration_required'
+          assert client.get('/api/fortyguard/reports/not-a-real-report').status_code == 404
+
+          usage = client.get('/api/fortyguard/usage')
+          assert usage.status_code == 200, usage.text
+          assert usage.json()['dataStatus'] == 'configuration_required'
+
           worker_payload = {
               'name': 'Test Worker',
               'role': 'Roofer',
@@ -147,5 +181,5 @@ jobs:
           )
           assert verification.status_code == 200, verification.text
           assert verification.json()['status'] == 'verification_unavailable'
-          print('HeatShield setup, historical behavior and operational planner smoke test passed')
+          print('HeatShield setup, full FortyGuard suite, historical behavior and operational planner smoke test passed')
           PY

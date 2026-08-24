@@ -26,7 +26,9 @@ class Settings(BaseSettings):
     fortyguard_base_url: str = 'https://api.fortyguard.com'
     fortyguard_timeout_seconds: float = 30.0
     fortyguard_poll_interval_seconds: float = 2.0
-    fortyguard_max_poll_attempts: int = 60
+    # Heat Intelligence and segmentation can take longer than a heatmap. Keep
+    # bounded polling, but allow up to four minutes before declaring timeout.
+    fortyguard_max_poll_attempts: int = 120
     fortyguard_granularity_meters: int = 100
     # The provider can complete the newest hour before temperature tiles are
     # available. Retry a small number of recent *site-local* whole hours.

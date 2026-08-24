@@ -1,6 +1,15 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Response, status
 
 from app.core.config import Settings, get_settings
+from app.fortyguard_models import (
+    EnvironmentalContextRequest,
+    EnvironmentalContextResponse,
+    FortyGuardUsageResponse,
+    HeatIntelligenceRequest,
+    HeatIntelligenceResponse,
+    SitePhysicalContextRequest,
+    SitePhysicalContextResponse,
+)
 from app.historical_models import HistoricalHeatBehaviorRequest, HistoricalHeatBehaviorResponse
 from app.schemas import (
     ActionAccepted,
@@ -21,6 +30,7 @@ from app.schemas import (
     WorkerCreate,
 )
 from app.services.fortyguard_profile import FortyGuardProfileService
+from app.services.fortyguard_suite import FortyGuardSuiteService, get_cached_heat_intelligence_report
 from app.services.historical_heat_behavior import HistoricalHeatBehaviorService
 from app.services.operational_heat_planner import OperationalHeatPlannerService
 from app.services.operational_plan import OperationalPlanService
@@ -53,6 +63,10 @@ def fortyguard_profile_service(settings: Settings = Depends(get_settings)) -> Fo
 
 def historical_heat_behavior_service(settings: Settings = Depends(get_settings)) -> HistoricalHeatBehaviorService:
     return HistoricalHeatBehaviorService(settings)
+
+
+def fortyguard_suite_service(settings: Settings = Depends(get_settings)) -> FortyGuardSuiteService:
+    return FortyGuardSuiteService(settings)
 
 
 def store(settings: Settings = Depends(get_settings)) -> HeatShieldStore:
@@ -185,6 +199,68 @@ async def historical_heat_behavior(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='Site not found')
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc))
+
+
+@router.post('/sites/{site_id}/fortyguard/environment', response_model=EnvironmentalContextResponse)
+async def fortyguard_environment(
+    site_id: str,
+    payload: EnvironmentalContextRequest,
+    svc: FortyGuardSuiteService = Depends(fortyguard_suite_service),
+) -> EnvironmentalContextResponse:
+    try:
+        return await svc.environmental_context(site_id, payload)
+    except FileNotFoundError:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='Site not found')
+
+
+@router.post('/sites/{site_id}/fortyguard/physical-context', response_model=SitePhysicalContextResponse)
+async def fortyguard_physical_context(
+    site_id: str,
+    payload: SitePhysicalContextRequest,
+    svc: FortyGuardSuiteService = Depends(fortyguard_suite_service),
+) -> SitePhysicalContextResponse:
+    try:
+        return await svc.physical_context(site_id, payload)
+    except FileNotFoundError:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='Site not found')
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc))
+
+
+@router.post('/sites/{site_id}/fortyguard/heat-intelligence', response_model=HeatIntelligenceResponse)
+async def fortyguard_heat_intelligence(
+    site_id: str,
+    payload: HeatIntelligenceRequest,
+    svc: FortyGuardSuiteService = Depends(fortyguard_suite_service),
+) -> HeatIntelligenceResponse:
+    try:
+        return await svc.heat_intelligence(site_id, payload)
+    except FileNotFoundError:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='Site not found')
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc))
+
+
+@router.get('/fortyguard/reports/{report_id}')
+async def fortyguard_report_pdf(report_id: str) -> Response:
+    content = get_cached_heat_intelligence_report(report_id)
+    if content is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='Heat Intelligence report expired or was not found.')
+    return Response(
+        content=content,
+        media_type='application/pdf',
+        headers={
+            'Content-Disposition': 'inline; filename="fortyguard-heat-intelligence.pdf"',
+            'Cache-Control': 'private, max-age=300',
+        },
+    )
+
+
+@router.get('/fortyguard/usage', response_model=FortyGuardUsageResponse)
+async def fortyguard_usage(
+    svc: FortyGuardSuiteService = Depends(fortyguard_suite_service),
+) -> FortyGuardUsageResponse:
+    return await svc.usage()
 
 
 @router.post('/sites/{site_id}/operational-planner', response_model=OperationalHeatPlan)
