@@ -23,7 +23,7 @@ class HistoricalHeatBehaviorRequest(CamelModel):
 
 
 class HistoricalLayerStatus(CamelModel):
-    analyticType: Literal['exceedance', 'persistence', 'time_of_measure']
+    analyticType: Literal['tcm', 'exceedance', 'persistence', 'time_of_measure']
     status: Literal['verified', 'unavailable']
     activityId: str | None = None
     cellCount: int = 0
@@ -37,6 +37,7 @@ class HistoricalLayerStatus(CamelModel):
 class HistoricalHeatCell(CamelModel):
     id: str
     polygon: list[Coordinate]
+    temperatureC: float | None = None
     exceedanceHours: float | None = None
     persistenceHours: float | None = None
     peakHourUtc: int | None = None
@@ -48,6 +49,7 @@ class HistoricalZoneSample(CamelModel):
     zoneName: str
     zoneType: str
     evidenceStatus: Literal['complete', 'partial', 'unmatched']
+    temperatureC: float | None = None
     exceedanceHours: float | None = None
     persistenceHours: float | None = None
     peakHourUtc: int | None = None
@@ -68,6 +70,9 @@ class HistoricalHeatBehaviorResponse(CamelModel):
     generatedAt: str
     providerRequestCount: int = 0
     cellCount: int = 0
+    meanTemperatureC: float | None = None
+    minTemperatureC: float | None = None
+    maxTemperatureC: float | None = None
     meanExceedanceHours: float | None = None
     maxExceedanceHours: float | None = None
     meanPersistenceHours: float | None = None
