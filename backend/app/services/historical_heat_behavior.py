@@ -19,7 +19,7 @@ from app.services.store import HeatShieldStore
 
 
 _HISTORY_CACHE: dict[str, tuple[datetime, HistoricalHeatBehaviorResponse]] = {}
-_ANALYTICS = ('exceedance', 'persistence', 'time_of_measure')
+_ANALYTICS = ('tcm', 'exceedance', 'persistence', 'time_of_measure')
 
 
 def _number(value: Any) -> float | None:
@@ -52,8 +52,17 @@ def _props(feature: dict[str, Any]) -> dict[str, Any]:
     return value if isinstance(value, dict) else {}
 
 
-def _value(feature: dict[str, Any] | None) -> float | None:
-    return _number(_props(feature).get('value')) if feature else None
+def _analytic_value(feature: dict[str, Any] | None, analytic_type: str) -> float | None:
+    if not feature:
+        return None
+    props = _props(feature)
+    if analytic_type == 'tcm':
+        for key in ('average_temperature', 'temperature', 'value'):
+            value = _number(props.get(key))
+            if value is not None:
+                return value
+        return None
+    return _number(props.get('value'))
 
 
 def _feature_key(feature: dict[str, Any], index: int) -> str:
@@ -115,32 +124,49 @@ def _local_hour(hour_utc: int | None, reference_date: date, timezone_name: str) 
     return _portable_hour_label(start), f'{_portable_hour_label(start)}–{_portable_hour_label(end)}'
 
 
-def _layer_status(analytic_type: str, activity_id: str | None, result: dict[str, Any] | None, error: str | None) -> HistoricalLayerStatus:
+def _layer_status(
+    analytic_type: str,
+    activity_id: str | None,
+    result: dict[str, Any] | None,
+    error: str | None,
+) -> HistoricalLayerStatus:
     features = _features(result)
-    values = [value for feature in features if (value := _value(feature)) is not None]
+    values = [
+        value
+        for feature in features
+        if (value := _analytic_value(feature, analytic_type)) is not None
+    ]
     stats = result.get('stats_data') if isinstance(result, dict) and isinstance(result.get('stats_data'), dict) else {}
+    units = '°C' if analytic_type == 'tcm' else str(stats.get('units') or 'hour')
     if not values:
         return HistoricalLayerStatus(
-            analyticType=analytic_type, status='unavailable', activityId=activity_id,
-            cellCount=len(features), units=str(stats.get('units') or 'hour'),
+            analyticType=analytic_type,
+            status='unavailable',
+            activityId=activity_id,
+            cellCount=len(features),
+            units=units,
             message=error or 'FortyGuard completed this historical layer but returned no usable cells.',
         )
     return HistoricalLayerStatus(
-        analyticType=analytic_type, status='verified', activityId=activity_id,
-        cellCount=len(values), units=str(stats.get('units') or 'hour'),
-        minValue=_number(stats.get('min')) if _number(stats.get('min')) is not None else min(values),
-        maxValue=_number(stats.get('max')) if _number(stats.get('max')) is not None else max(values),
-        meanValue=_number(stats.get('mean')) if _number(stats.get('mean')) is not None else sum(values) / len(values),
+        analyticType=analytic_type,
+        status='verified',
+        activityId=activity_id,
+        cellCount=len(values),
+        units=units,
+        minValue=min(values),
+        maxValue=max(values),
+        meanValue=sum(values) / len(values),
     )
 
 
 class HistoricalHeatBehaviorService:
-    """Describe how one site behaves across a historical FortyGuard date range.
+    """Build evidence-bound historical heat intelligence for one saved site.
 
-    The service submits exactly three shared site-wide historical heatmaps:
-    exceedance, persistence and time_of_measure. Site zones are local spatial
-    joins against those shared grids, so adding zones does not spend extra
-    provider calls.
+    Each run submits four shared site-wide FortyGuard heatmaps: TCM temperature,
+    exceedance, persistence, and time_of_measure. Saved site zones are joined
+    locally against those shared grids, so adding zones does not spend extra
+    provider calls. The API archive begins at 2019-01-01; a single provider
+    range request is kept to at most 31 completed calendar days.
     """
 
     def __init__(self, settings: Settings):
@@ -152,6 +178,7 @@ class HistoricalHeatBehaviorService:
     def _resolve_range(site: Site, request: HistoricalHeatBehaviorRequest) -> tuple[date, date, str]:
         timezone_name, site_timezone = FortyGuardClient._site_timezone(site)
         today = datetime.now(timezone.utc).astimezone(site_timezone).date()
+        latest_completed_day = today - timedelta(days=1)
         if request.startDate and request.endDate:
             try:
                 start = date.fromisoformat(request.startDate)
@@ -159,16 +186,16 @@ class HistoricalHeatBehaviorService:
             except ValueError as exc:
                 raise ValueError('Historical dates must use YYYY-MM-DD.') from exc
         else:
-            end = today
+            end = latest_completed_day
             start = end - timedelta(days=29)
-        if start < date(2021, 1, 1):
-            raise ValueError('FortyGuard historical analysis starts at 2021-01-01.')
-        if end > today:
-            raise ValueError('Historical analysis cannot end in the future for the selected site.')
+        if start < date(2019, 1, 1):
+            raise ValueError('FortyGuard historical archive starts at 2019-01-01.')
+        if end > latest_completed_day:
+            raise ValueError('Historical intelligence uses completed days only; choose yesterday or earlier.')
         if start > end:
             raise ValueError('Historical startDate must be on or before endDate.')
-        if (end - start).days + 1 > 90:
-            raise ValueError('Historical analysis is limited to 90 days per run to keep the report focused and credit-aware.')
+        if (end - start).days + 1 > 31:
+            raise ValueError('A detailed FortyGuard historical run is limited to 31 days. Compare additional periods in separate runs.')
         return start, end, timezone_name
 
     def _cache_key(self, site_id: str, start: date, end: date, request: HistoricalHeatBehaviorRequest) -> str:
@@ -222,6 +249,7 @@ class HistoricalHeatBehaviorService:
     def _zones(
         self,
         site: Site,
+        tcm_features: list[dict[str, Any]],
         exceedance_features: list[dict[str, Any]],
         persistence_features: list[dict[str, Any]],
         time_features: list[dict[str, Any]],
@@ -230,19 +258,38 @@ class HistoricalHeatBehaviorService:
     ) -> list[HistoricalZoneSample]:
         output: list[HistoricalZoneSample] = []
         for zone in site.zones:
-            exceedance = _value(_find_containing(exceedance_features, zone.center.lat, zone.center.lng))
-            persistence = _value(_find_containing(persistence_features, zone.center.lat, zone.center.lng))
-            peak_raw = _value(_find_containing(time_features, zone.center.lat, zone.center.lng))
+            temperature = _analytic_value(
+                _find_containing(tcm_features, zone.center.lat, zone.center.lng), 'tcm'
+            )
+            exceedance = _analytic_value(
+                _find_containing(exceedance_features, zone.center.lat, zone.center.lng), 'exceedance'
+            )
+            persistence = _analytic_value(
+                _find_containing(persistence_features, zone.center.lat, zone.center.lng), 'persistence'
+            )
+            peak_raw = _analytic_value(
+                _find_containing(time_features, zone.center.lat, zone.center.lng), 'time_of_measure'
+            )
             peak_hour = int(round(peak_raw)) % 24 if peak_raw is not None else None
             peak_local, _ = _local_hour(peak_hour, reference_date, timezone_name)
-            count = sum(value is not None for value in (exceedance, persistence, peak_hour))
-            status = 'complete' if count == 3 else 'partial' if count else 'unmatched'
+            count = sum(value is not None for value in (temperature, exceedance, persistence, peak_hour))
+            status = 'complete' if count == 4 else 'partial' if count else 'unmatched'
             output.append(HistoricalZoneSample(
-                zoneId=zone.id, zoneName=zone.name, zoneType=zone.type, evidenceStatus=status,
-                exceedanceHours=exceedance, persistenceHours=persistence,
-                peakHourUtc=peak_hour, peakHourLocal=peak_local,
+                zoneId=zone.id,
+                zoneName=zone.name,
+                zoneType=zone.type,
+                evidenceStatus=status,
+                temperatureC=temperature,
+                exceedanceHours=exceedance,
+                persistenceHours=persistence,
+                peakHourUtc=peak_hour,
+                peakHourLocal=peak_local,
             ))
-        return sorted(output, key=lambda item: item.exceedanceHours if item.exceedanceHours is not None else -1, reverse=True)
+        return sorted(
+            output,
+            key=lambda item: item.exceedanceHours if item.exceedanceHours is not None else -1,
+            reverse=True,
+        )
 
     async def generate(self, site_id: str, request: HistoricalHeatBehaviorRequest) -> HistoricalHeatBehaviorResponse:
         site = self.store.get_site(site_id)
@@ -259,30 +306,48 @@ class HistoricalHeatBehaviorService:
             _ = self.fortyguard.headers
         except FortyGuardConfigurationError:
             return HistoricalHeatBehaviorResponse(
-                siteId=site.id, siteName=site.name, startDate=start.isoformat(), endDate=end.isoformat(),
-                dayCount=day_count, thresholdF=request.thresholdF, thresholdC=threshold_c,
-                timezoneName=timezone_name, granularityMeters=request.granularityMeters,
-                dataStatus='configuration_required', generatedAt=now.isoformat(),
-                message='FortyGuard API key is not configured. Historical site behavior requires FortyGuard.',
+                siteId=site.id,
+                siteName=site.name,
+                startDate=start.isoformat(),
+                endDate=end.isoformat(),
+                dayCount=day_count,
+                thresholdF=request.thresholdF,
+                thresholdC=threshold_c,
+                timezoneName=timezone_name,
+                granularityMeters=request.granularityMeters,
+                dataStatus='configuration_required',
+                generatedAt=now.isoformat(),
+                message='FortyGuard API key is not configured. Historical Heat Intelligence requires FortyGuard.',
             )
 
         raw: dict[str, tuple[str | None, dict[str, Any] | None, str | None]] = {}
         for analytic_type in _ANALYTICS:
             raw[analytic_type] = await self._request_layer(
-                site, start, end, request.granularityMeters, analytic_type, threshold_c,
+                site,
+                start,
+                end,
+                request.granularityMeters,
+                analytic_type,
+                threshold_c,
             )
 
         layers = [_layer_status(name, *raw[name]) for name in _ANALYTICS]
         verified_count = sum(layer.status == 'verified' for layer in layers)
         provider_count = sum(1 for activity_id, _, _ in raw.values() if activity_id)
 
+        tcm_features = _features(raw['tcm'][1])
         exceedance_features = _features(raw['exceedance'][1])
         persistence_features = _features(raw['persistence'][1])
         time_features = _features(raw['time_of_measure'][1])
 
-        feature_sets = [features for features in (exceedance_features, persistence_features, time_features) if features]
+        feature_sets = [
+            features
+            for features in (tcm_features, exceedance_features, persistence_features, time_features)
+            if features
+        ]
         base_features = max(feature_sets, key=len) if feature_sets else []
         indexed = {
+            'tcm': {_feature_key(feature, index): feature for index, feature in enumerate(tcm_features)},
             'exceedance': {_feature_key(feature, index): feature for index, feature in enumerate(exceedance_features)},
             'persistence': {_feature_key(feature, index): feature for index, feature in enumerate(persistence_features)},
             'time_of_measure': {_feature_key(feature, index): feature for index, feature in enumerate(time_features)},
@@ -294,48 +359,82 @@ class HistoricalHeatBehaviorService:
             polygon = _polygon(feature)
             if len(polygon) < 3:
                 continue
-            exceedance = _value(indexed['exceedance'].get(key_id))
-            persistence = _value(indexed['persistence'].get(key_id))
-            peak_raw = _value(indexed['time_of_measure'].get(key_id))
+            temperature = _analytic_value(indexed['tcm'].get(key_id), 'tcm')
+            exceedance = _analytic_value(indexed['exceedance'].get(key_id), 'exceedance')
+            persistence = _analytic_value(indexed['persistence'].get(key_id), 'persistence')
+            peak_raw = _analytic_value(indexed['time_of_measure'].get(key_id), 'time_of_measure')
             peak_hour = int(round(peak_raw)) % 24 if peak_raw is not None else None
             peak_local, _ = _local_hour(peak_hour, reference_date, timezone_name)
             cells.append(HistoricalHeatCell(
-                id=key_id, polygon=polygon, exceedanceHours=exceedance,
-                persistenceHours=persistence, peakHourUtc=peak_hour, peakHourLocal=peak_local,
+                id=key_id,
+                polygon=polygon,
+                temperatureC=temperature,
+                exceedanceHours=exceedance,
+                persistenceHours=persistence,
+                peakHourUtc=peak_hour,
+                peakHourLocal=peak_local,
             ))
 
+        temperature_values = [cell.temperatureC for cell in cells if cell.temperatureC is not None]
         exceedance_values = [cell.exceedanceHours for cell in cells if cell.exceedanceHours is not None]
         persistence_values = [cell.persistenceHours for cell in cells if cell.persistenceHours is not None]
         peak_hours = [cell.peakHourUtc for cell in cells if cell.peakHourUtc is not None]
         common_peak = Counter(peak_hours).most_common(1)[0][0] if peak_hours else None
         common_peak_local, common_period = _local_hour(common_peak, reference_date, timezone_name)
-        zones = self._zones(site, exceedance_features, persistence_features, time_features, reference_date, timezone_name)
+        zones = self._zones(
+            site,
+            tcm_features,
+            exceedance_features,
+            persistence_features,
+            time_features,
+            reference_date,
+            timezone_name,
+        )
 
-        if verified_count == 3:
+        if verified_count == len(_ANALYTICS):
             data_status = 'verified'
-            message = 'FortyGuard historical range analysis is verified across exceedance, persistence and peak-time layers.'
+            message = (
+                'FortyGuard historical intelligence is verified across temperature, '
+                'threshold exceedance, heat persistence, and peak-time layers.'
+            )
         elif verified_count > 0:
             data_status = 'partial'
             missing = ', '.join(layer.analyticType for layer in layers if layer.status != 'verified')
-            message = f'Historical analysis is partial; unavailable FortyGuard layer(s): {missing}.'
+            message = f'Historical intelligence is partial; unavailable FortyGuard layer(s): {missing}.'
         else:
             data_status = 'unavailable'
             errors = [error for _, _, error in raw.values() if error]
             message = errors[0] if errors else 'FortyGuard returned no usable historical cells for this site and period.'
 
         response = HistoricalHeatBehaviorResponse(
-            siteId=site.id, siteName=site.name, startDate=start.isoformat(), endDate=end.isoformat(),
-            dayCount=day_count, thresholdF=request.thresholdF, thresholdC=threshold_c,
-            timezoneName=timezone_name, granularityMeters=request.granularityMeters,
-            dataStatus=data_status, generatedAt=now.isoformat(), providerRequestCount=provider_count,
+            siteId=site.id,
+            siteName=site.name,
+            startDate=start.isoformat(),
+            endDate=end.isoformat(),
+            dayCount=day_count,
+            thresholdF=request.thresholdF,
+            thresholdC=threshold_c,
+            timezoneName=timezone_name,
+            granularityMeters=request.granularityMeters,
+            dataStatus=data_status,
+            generatedAt=now.isoformat(),
+            providerRequestCount=provider_count,
             cellCount=len(cells),
+            meanTemperatureC=sum(temperature_values) / len(temperature_values) if temperature_values else None,
+            minTemperatureC=min(temperature_values) if temperature_values else None,
+            maxTemperatureC=max(temperature_values) if temperature_values else None,
             meanExceedanceHours=sum(exceedance_values) / len(exceedance_values) if exceedance_values else None,
             maxExceedanceHours=max(exceedance_values) if exceedance_values else None,
             meanPersistenceHours=sum(persistence_values) / len(persistence_values) if persistence_values else None,
             maxPersistenceHours=max(persistence_values) if persistence_values else None,
-            commonPeakHourUtc=common_peak, commonPeakHourLocal=common_peak_local,
-            commonPeakPeriodLocal=common_period, layers=layers, cells=cells, zones=zones,
-            message=message, cached=False,
+            commonPeakHourUtc=common_peak,
+            commonPeakHourLocal=common_peak_local,
+            commonPeakPeriodLocal=common_period,
+            layers=layers,
+            cells=cells,
+            zones=zones,
+            message=message,
+            cached=False,
         )
         self._cache(key, now, response)
         return response
