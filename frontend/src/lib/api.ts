@@ -16,6 +16,7 @@ import type {
   WorkerCreate,
 } from '../types/site'
 import type { HistoricalHeatBehaviorRequest, HistoricalHeatBehaviorResponse } from '../types/history'
+import type { UrbanMorphologyRequest, UrbanMorphologyResponse } from '../types/urban'
 
 const BASE_URL = import.meta.env.VITE_API_BASE_URL ?? ''
 
@@ -97,6 +98,13 @@ export const api = {
   },
   generateHistoricalHeatBehavior(siteId: string, payload: HistoricalHeatBehaviorRequest, signal?: AbortSignal) {
     return request<HistoricalHeatBehaviorResponse>(`/api/sites/${siteId}/historical-heat-behavior`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+      signal,
+    })
+  },
+  generateUrbanMorphology(siteId: string, payload: UrbanMorphologyRequest, signal?: AbortSignal) {
+    return request<UrbanMorphologyResponse>(`/api/sites/${siteId}/urban-morphology`, {
       method: 'POST',
       body: JSON.stringify(payload),
       signal,
