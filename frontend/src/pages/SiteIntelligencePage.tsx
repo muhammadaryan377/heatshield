@@ -4,6 +4,7 @@ import { useSearchParams } from 'react-router-dom'
 import { AppShell } from '../components/layout/AppShell'
 import { Topbar } from '../components/layout/Topbar'
 import { CreateSiteModal } from '../components/site/CreateSiteModal'
+import { FortyGuardEvidenceWorkbench } from '../components/site/FortyGuardEvidenceWorkbench'
 import { SiteMap } from '../components/site/SiteMapFinal'
 import { SiteStatusPanel } from '../components/site/SiteStatusPanel'
 import { WorkerOverview } from '../components/site/WorkerOverview'
@@ -167,6 +168,7 @@ export function SiteIntelligencePage() {
             <div className="command-center-workers">
               <WorkerOverview workers={data.workers} siteId={data.site.id} />
             </div>
+            <FortyGuardEvidenceWorkbench key={data.site.id} siteId={data.site.id} />
           </>
         )}
       </div>
