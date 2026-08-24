@@ -23,6 +23,8 @@ import type {
   OperationalHeatPlan,
   OperationalPlannerOption,
   Site,
+  SiteIntelligence,
+  Worker,
   WorkerOperationalDecision,
 } from '../types/site'
 
@@ -72,7 +74,10 @@ function OptionCard({ option, active }: { option: OperationalPlannerOption; acti
   const delta = reduction(option)
   return (
     <article className={`op-option op-option--${optionTone(option)}${active ? ' op-option--active' : ''}`}>
-      <div className="op-option__top"><span>{option.kind === 'now' ? 'NOW' : option.kind === 'better_time' ? 'BETTER TIME' : 'BETTER PLACE'}</span>{active && <strong><Sparkles size={13} /> Recommended</strong>}</div>
+      <div className="op-option__top">
+        <span>{option.kind === 'now' ? 'NOW' : option.kind === 'better_time' ? 'BETTER TIME' : 'BETTER PLACE'}</span>
+        {active && <strong><Sparkles size={13} /> Recommended</strong>}
+      </div>
       <h3>{option.kind === 'better_place' && option.zoneName ? option.zoneName : option.label}</h3>
       <div className="op-option__temperature">{temp(option.temperatureC)}</div>
       {delta && <span className={`op-option__delta${option.deltaC != null && option.deltaC < 0 ? ' op-option__delta--good' : ''}`}>{delta}</span>}
@@ -82,13 +87,41 @@ function OptionCard({ option, active }: { option: OperationalPlannerOption; acti
   )
 }
 
+function ReadinessItem({
+  icon,
+  label,
+  value,
+  detail,
+  tone,
+}: {
+  icon: React.ReactNode
+  label: string
+  value: string
+  detail: string
+  tone: 'ready' | 'limited' | 'blocked' | 'pending'
+}) {
+  return (
+    <div className={`op-readiness-item op-readiness-item--${tone}`}>
+      <div className="op-readiness-item__icon">{icon}</div>
+      <div>
+        <span>{label}</span>
+        <strong>{value}</strong>
+        <small>{detail}</small>
+      </div>
+    </div>
+  )
+}
+
 export function GeneratePlanPage() {
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
   const [sites, setSites] = useState<Site[]>([])
   const [siteId, setSiteId] = useState(searchParams.get('site') ?? '')
+  const [workers, setWorkers] = useState<Worker[]>([])
+  const [siteContext, setSiteContext] = useState<SiteIntelligence | null>(null)
   const [plan, setPlan] = useState<OperationalHeatPlan | null>(null)
   const [loadingSites, setLoadingSites] = useState(true)
+  const [loadingContext, setLoadingContext] = useState(false)
   const [generating, setGenerating] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [resolution, setResolution] = useState<60 | 80 | 100>(100)
@@ -110,9 +143,82 @@ export function GeneratePlanPage() {
     return () => controller.abort()
   }, [])
 
+  useEffect(() => {
+    if (!siteId) {
+      setWorkers([])
+      setSiteContext(null)
+      return
+    }
+
+    const controller = new AbortController()
+    setLoadingContext(true)
+    setWorkers([])
+    setSiteContext(null)
+
+    Promise.allSettled([
+      api.listWorkers(siteId, controller.signal),
+      api.getSiteIntelligence(siteId, controller.signal),
+    ]).then(([workersResult, contextResult]) => {
+      if (controller.signal.aborted) return
+      if (workersResult.status === 'fulfilled') setWorkers(workersResult.value)
+      if (contextResult.status === 'fulfilled') setSiteContext(contextResult.value)
+    }).finally(() => {
+      if (!controller.signal.aborted) setLoadingContext(false)
+    })
+
+    return () => controller.abort()
+  }, [siteId])
+
   const selectedSite = sites.find((site) => site.id === siteId) ?? null
   const approvedZones = selectedSite?.zones.filter((zone) => zone.operationalApproved) ?? []
+  const activeWorkers = workers.filter((worker) => worker.status === 'active')
+  const planningReadyWorkers = activeWorkers.filter((worker) => Boolean(worker.task?.trim() && worker.coordinate))
+  const workersNeedingSetup = Math.max(0, activeWorkers.length - planningReadyWorkers.length)
+  const hasVerifiedContext = Boolean(siteContext?.conditions && siteContext.dataStatus === 'live')
   const generatedLabel = useMemo(() => plan ? timeLabel(plan.generatedAt) : 'Not run yet', [plan])
+
+  const readinessTone = !activeWorkers.length || !offsets.length
+    ? 'blocked'
+    : !approvedZones.length || !hasVerifiedContext || workersNeedingSetup > 0
+      ? 'limited'
+      : 'ready'
+
+  const readinessLabel = readinessTone === 'ready'
+    ? 'Ready to generate recommendations'
+    : readinessTone === 'blocked'
+      ? 'Setup required before planning'
+      : 'Ready with limited comparison coverage'
+
+  const canRunPlanner = Boolean(siteId && offsets.length && activeWorkers.length && !generating && !loadingContext)
+
+  const planSummary = useMemo(() => {
+    if (!plan) return null
+    const summary = {
+      evaluated: plan.workers.length,
+      betterTime: 0,
+      betterPlace: 0,
+      continueNow: 0,
+      review: 0,
+      bestReductionC: null as number | null,
+    }
+
+    plan.workers.forEach((decision) => {
+      if (decision.recommendedChoice === 'better_time') summary.betterTime += 1
+      else if (decision.recommendedChoice === 'better_place') summary.betterPlace += 1
+      else if (decision.recommendedChoice === 'now') summary.continueNow += 1
+      else summary.review += 1
+
+      const option = selectedOption(decision)
+      if (option?.temperatureC != null && decision.now.temperatureC != null) {
+        const reductionC = decision.now.temperatureC - option.temperatureC
+        if (reductionC > 0 && (summary.bestReductionC == null || reductionC > summary.bestReductionC)) {
+          summary.bestReductionC = reductionC
+        }
+      }
+    })
+
+    return summary
+  }, [plan])
 
   const changeSite = (nextId: string) => {
     setSiteId(nextId)
@@ -129,7 +235,7 @@ export function GeneratePlanPage() {
   }
 
   const runPlanner = async () => {
-    if (!siteId || !offsets.length) return
+    if (!siteId || !offsets.length || !activeWorkers.length) return
     setGenerating(true)
     setError(null)
     setApprovals({})
@@ -192,45 +298,156 @@ export function GeneratePlanPage() {
       <Topbar
         sites={sites}
         selectedSiteId={siteId || null}
-        observedAt={plan?.generatedAt}
+        observedAt={siteContext?.observedAt}
         onSiteChange={changeSite}
         pageTitle="Operational Heat Planner"
         pageSubtitle="Compare NOW vs BETTER TIME vs BETTER PLACE for each worker using FortyGuard spatial evidence and supervisor-approved zones."
         showAddSite={false}
       />
 
-      <div className="op-page">
+      <div className="op-page op-page--hero">
         {loadingSites ? (
           <div className="plan-loading panel"><RefreshCw className="plan-spin" size={24} /><div><strong>Loading planning context</strong><p>Reading sites, workers and approved zones…</p></div></div>
         ) : !sites.length ? (
           <div className="plan-loading panel"><MapPin size={28} /><div><strong>Create a site before planning operations</strong><p>The planner needs a site boundary, workers and FortyGuard access.</p></div><button className="button button--primary" onClick={() => navigate('/')}>Go to Home</button></div>
         ) : (
           <>
-            <section className="op-setup panel">
-              <div className="op-setup__intro">
-                <span className="plan-section-label">FORTYGUARD DECISION SCAN</span>
-                <h2>Aaj workers ko kab aur kahan kaam karna chahiye?</h2>
-                <p>One scan is shared across every worker. HeatShield samples the current site and selected future windows, then compares only supervisor-approved operational zones.</p>
+            <section className="op-setup op-setup--hero panel">
+              <div className="op-hero-head">
+                <div className="op-setup__intro">
+                  <span className="plan-section-label">FORTYGUARD DECISION SCAN</span>
+                  <h2>What is the best heat-aware time and approved zone for each worker today?</h2>
+                  <p>HeatShield compares current conditions with selected future windows and supervisor-approved work zones, then produces an evidence-bound recommendation for every active worker.</p>
+                </div>
+                <div className={`op-readiness-badge op-readiness-badge--${readinessTone}`}>
+                  <span>{readinessTone === 'ready' ? 'READY' : readinessTone === 'blocked' ? 'ACTION REQUIRED' : 'LIMITED'}</span>
+                  <strong>{readinessLabel}</strong>
+                </div>
               </div>
-              <div className="op-setup__stats">
-                <div><span>Site</span><strong>{selectedSite?.name}</strong></div>
-                <div><span>Approved zones</span><strong>{approvedZones.length}</strong></div>
-                <div><span>Future windows</span><strong>{offsets.length}</strong></div>
-                <div><span>Provider jobs</span><strong>Up to {offsets.length + 1}</strong></div>
+
+              <div className="op-setup__stats op-setup__stats--decision">
+                <div><span>Selected Site</span><strong>{selectedSite?.name ?? '—'}</strong><small>{selectedSite?.address || 'No site address'}</small></div>
+                <div><span>Active Workers</span><strong>{activeWorkers.length}</strong><small>{workersNeedingSetup ? `${workersNeedingSetup} need task or location setup` : 'Worker context ready'}</small></div>
+                <div><span>Approved Work Zones</span><strong>{approvedZones.length}</strong><small>{approvedZones.length ? 'Eligible for Better Place' : 'Better Place unavailable'}</small></div>
+                <div><span>Future Time Checks</span><strong>{offsets.length}</strong><small>Up to {offsets.length + 1} shared provider jobs</small></div>
               </div>
-              <div className="op-controls">
-                <label><span>FortyGuard resolution</span><select value={resolution} onChange={(event) => { setResolution(Number(event.target.value) as 60 | 80 | 100); setPlan(null) }}><option value={60}>60 m · detailed</option><option value={80}>80 m</option><option value={100}>100 m · efficient</option></select></label>
-                <label><span>Minimum improvement</span><select value={minImprovement} onChange={(event) => { setMinImprovement(Number(event.target.value)); setPlan(null) }}><option value={0.5}>0.5°C</option><option value={1}>1.0°C</option><option value={2}>2.0°C</option><option value={3}>3.0°C</option></select></label>
-                <div className="op-offsets"><span>Compare future</span><div>{DEFAULT_OFFSETS.map((hour) => <button type="button" key={hour} className={offsets.includes(hour) ? 'active' : ''} onClick={() => toggleOffset(hour)}>+{hour}h</button>)}</div></div>
-                <button className="button button--primary op-run" type="button" disabled={generating || !offsets.length} onClick={() => void runPlanner()}>{generating ? <LoaderCircle className="plan-spin" size={17} /> : <Sparkles size={17} />}{generating ? 'Scanning FortyGuard…' : plan ? 'Run Fresh Scan' : 'Run FortyGuard Planner'}</button>
+
+              <div className="op-readiness-block">
+                <div className="op-readiness-block__heading">
+                  <div><span className="plan-section-label">PLANNER READINESS</span><h3>Inputs HeatShield will use</h3></div>
+                  <small>Only verified provider evidence and supervisor-approved locations can drive recommendations.</small>
+                </div>
+                <div className="op-readiness-grid">
+                  <ReadinessItem
+                    icon={<UsersRound size={17} />}
+                    label="Workers"
+                    value={loadingContext ? 'Checking…' : `${activeWorkers.length} active`}
+                    detail={!activeWorkers.length ? 'Add an active worker before planning.' : workersNeedingSetup ? `${workersNeedingSetup} worker profile${workersNeedingSetup === 1 ? '' : 's'} need task/location context.` : 'Task and map context available.'}
+                    tone={loadingContext ? 'pending' : !activeWorkers.length ? 'blocked' : workersNeedingSetup ? 'limited' : 'ready'}
+                  />
+                  <ReadinessItem
+                    icon={<ShieldCheck size={17} />}
+                    label="Approved Zones"
+                    value={`${approvedZones.length} configured`}
+                    detail={approvedZones.length ? 'Better Place can compare approved alternatives.' : 'Better Time can still run; Better Place cannot.'}
+                    tone={approvedZones.length ? 'ready' : 'limited'}
+                  />
+                  <ReadinessItem
+                    icon={<ThermometerSun size={17} />}
+                    label="Current Heat Context"
+                    value={loadingContext ? 'Checking…' : hasVerifiedContext ? temp(siteContext?.conditions?.temperatureC) : 'Scan required'}
+                    detail={hasVerifiedContext ? `Observed ${timeLabel(siteContext?.observedAt)}` : 'The planner will request fresh provider evidence when it runs.'}
+                    tone={loadingContext ? 'pending' : hasVerifiedContext ? 'ready' : 'limited'}
+                  />
+                  <ReadinessItem
+                    icon={<Clock3 size={17} />}
+                    label="Future Windows"
+                    value={`${offsets.length} selected`}
+                    detail={offsets.length ? offsets.map((hour) => `+${hour}h`).join(' · ') : 'Select at least one future comparison window.'}
+                    tone={offsets.length ? 'ready' : 'blocked'}
+                  />
+                </div>
               </div>
-              {!approvedZones.length && <div className="op-zone-warning"><ShieldCheck size={18} /><div><strong>BETTER PLACE needs approved zones</strong><p>Add task-compatible zones on the Sites screen. HeatShield will never suggest a random location.</p></div><button type="button" className="button button--secondary" onClick={() => navigate(`/sites?site=${encodeURIComponent(siteId)}`)}>Configure Zones</button></div>}
+
+              <div className="op-controls op-controls--hero">
+                <label>
+                  <span>Spatial Resolution</span>
+                  <select value={resolution} onChange={(event) => { setResolution(Number(event.target.value) as 60 | 80 | 100); setPlan(null) }}>
+                    <option value={60}>60 m · detailed</option>
+                    <option value={80}>80 m · balanced</option>
+                    <option value={100}>100 m · efficient</option>
+                  </select>
+                </label>
+                <label>
+                  <span>Minimum Temperature Improvement</span>
+                  <select value={minImprovement} onChange={(event) => { setMinImprovement(Number(event.target.value)); setPlan(null) }}>
+                    <option value={0.5}>0.5°C</option>
+                    <option value={1}>1.0°C</option>
+                    <option value={2}>2.0°C</option>
+                    <option value={3}>3.0°C</option>
+                  </select>
+                </label>
+                <div className="op-offsets"><span>Future Time Checks</span><div>{DEFAULT_OFFSETS.map((hour) => <button type="button" key={hour} className={offsets.includes(hour) ? 'active' : ''} onClick={() => toggleOffset(hour)}>+{hour}h</button>)}</div></div>
+                <button className="button button--primary op-run op-run--hero" type="button" disabled={!canRunPlanner} onClick={() => void runPlanner()}>
+                  {generating ? <LoaderCircle className="plan-spin" size={17} /> : <Sparkles size={17} />}
+                  {generating ? 'Analyzing FortyGuard evidence…' : plan ? 'Refresh Recommendations' : 'Generate Worker Recommendations'}
+                </button>
+              </div>
+
+              {!activeWorkers.length && !loadingContext && (
+                <div className="op-zone-warning op-zone-warning--critical">
+                  <UsersRound size={18} />
+                  <div><strong>Active workers are required</strong><p>Add and place at least one active worker before generating operational recommendations.</p></div>
+                  <button type="button" className="button button--secondary" onClick={() => navigate(`/add-worker?site=${encodeURIComponent(siteId)}`)}>Add Worker</button>
+                </div>
+              )}
+
+              {!approvedZones.length && (
+                <div className="op-zone-warning">
+                  <ShieldCheck size={18} />
+                  <div><strong>Better Place recommendations need approved work zones</strong><p>The planner can still compare Better Time, but HeatShield will never suggest a random location.</p></div>
+                  <button type="button" className="button button--secondary" onClick={() => navigate(`/sites?site=${encodeURIComponent(siteId)}`)}>Configure Zones</button>
+                </div>
+              )}
             </section>
 
-            {generating && !plan && <div className="plan-loading panel"><ThermometerSun className="plan-spin" size={26} /><div><strong>Building worker-specific thermal choices</strong><p>Submitting shared site scans, spatially joining worker coordinates, and comparing approved zones…</p></div></div>}
+            {generating && !plan && <div className="plan-loading panel"><ThermometerSun className="plan-spin" size={26} /><div><strong>Building worker-specific thermal choices</strong><p>Submitting shared site scans, joining worker coordinates to spatial evidence, and comparing approved zones…</p></div></div>}
+
+            {!plan && !generating && activeWorkers.length > 0 && (
+              <section className="op-pre-results panel">
+                <div className="op-pre-results__icon"><Sparkles size={22} /></div>
+                <div>
+                  <span className="plan-section-label">DECISION OUTPUT</span>
+                  <h3>Worker recommendations will appear here</h3>
+                  <p>Each worker will receive a side-by-side NOW, BETTER TIME and BETTER PLACE comparison, followed by one evidence-bound supervisor action.</p>
+                </div>
+                <div className="op-pre-results__steps">
+                  <span><strong>1</strong> Current worker exposure</span>
+                  <span><strong>2</strong> Cooler time or approved zone</span>
+                  <span><strong>3</strong> Supervisor approval and re-verification</span>
+                </div>
+              </section>
+            )}
 
             {plan && (
               <>
+                {planSummary && (
+                  <section className="op-summary panel">
+                    <div className="op-summary__heading">
+                      <div><span className="plan-section-label">PLAN SUMMARY</span><h2>Worker Recommendations</h2></div>
+                      <span>{generatedLabel} · {plan.timezoneName}</span>
+                    </div>
+                    <div className="op-summary__grid">
+                      <div><span>Workers Evaluated</span><strong>{planSummary.evaluated}</strong><small>Active workers in this scan</small></div>
+                      <div><span>Better Time</span><strong>{planSummary.betterTime}</strong><small>Delay or reschedule recommendations</small></div>
+                      <div><span>Better Place</span><strong>{planSummary.betterPlace}</strong><small>Approved zone relocations</small></div>
+                      <div><span>Continue Now</span><strong>{planSummary.continueNow}</strong><small>Current option remained best</small></div>
+                      <div><span>Needs Review</span><strong>{planSummary.review}</strong><small>Insufficient or conflicting evidence</small></div>
+                      <div><span>Best Expected Reduction</span><strong>{planSummary.bestReductionC != null ? `${planSummary.bestReductionC.toFixed(1)}°C` : '—'}</strong><small>Largest recommended reduction in this scan</small></div>
+                    </div>
+                  </section>
+                )}
+
                 <section className="op-evidence-strip panel">
                   <div><span><ShieldCheck size={15} /> FortyGuard scans</span><strong>{plan.providerRequestCount}</strong><small>Shared across {plan.workers.length} worker{plan.workers.length === 1 ? '' : 's'}</small></div>
                   <div><span><Gauge size={15} /> Heat-index context</span><strong>{plan.conditionHeatIndexC != null ? temp(plan.conditionHeatIndexC) : '—'}</strong><small>{sourceLabel(plan.conditionSource)}</small></div>

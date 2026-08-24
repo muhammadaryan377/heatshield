@@ -21,6 +21,7 @@ export default function App() {
 
         <Route path="/workforce" element={<SiteIntelligencePage />} />
         <Route path="/workers/new" element={<AddWorkerPage />} />
+        <Route path="/add-worker" element={<AddWorkerPage />} />
         <Route path="/plan" element={<GeneratePlanPage />} />
         <Route path="/sites" element={<SitesPage />} />
         <Route path="/heat-history" element={<HeatHistoryPage />} />
