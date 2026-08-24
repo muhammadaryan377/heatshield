@@ -19,6 +19,7 @@ import './historical-heat.css'
 import './historical-heat-intelligence.css'
 import './enterprise-final-polish.css'
 import './workforce-reports.css'
+import './workforce-final.css'
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
