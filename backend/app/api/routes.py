@@ -27,9 +27,12 @@ from app.services.operational_plan import OperationalPlanService
 from app.services.site_intelligence import SiteIntelligenceService
 from app.services.store import HeatShieldStore
 from app.services.thermal_map import ThermalMapService
+from app.services.urban_before_after import UrbanBeforeAfterService
 from app.services.urban_interventions import UrbanInterventionService
 from app.services.urban_morphology import UrbanMorphologyService
 from app.urban_models import (
+    UrbanBeforeAfterRequest,
+    UrbanBeforeAfterVerification,
     UrbanIntervention,
     UrbanInterventionCreate,
     UrbanInterventionUpdate,
@@ -70,6 +73,10 @@ def urban_morphology_service(settings: Settings = Depends(get_settings)) -> Urba
 
 def urban_intervention_service(settings: Settings = Depends(get_settings)) -> UrbanInterventionService:
     return UrbanInterventionService(settings)
+
+
+def urban_before_after_service(settings: Settings = Depends(get_settings)) -> UrbanBeforeAfterService:
+    return UrbanBeforeAfterService(settings)
 
 
 def store(settings: Settings = Depends(get_settings)) -> HeatShieldStore:
@@ -253,6 +260,39 @@ async def update_urban_intervention(
 ) -> UrbanIntervention:
     try:
         return svc.update(site_id, intervention_id, payload)
+    except FileNotFoundError:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='Site or intervention not found')
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc))
+
+
+@router.get(
+    '/sites/{site_id}/urban-interventions/{intervention_id}/verifications',
+    response_model=list[UrbanBeforeAfterVerification],
+)
+async def list_urban_before_after_verifications(
+    site_id: str,
+    intervention_id: str,
+    svc: UrbanBeforeAfterService = Depends(urban_before_after_service),
+) -> list[UrbanBeforeAfterVerification]:
+    try:
+        return svc.list(site_id, intervention_id)
+    except FileNotFoundError:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='Site or intervention not found')
+
+
+@router.post(
+    '/sites/{site_id}/urban-interventions/{intervention_id}/verify',
+    response_model=UrbanBeforeAfterVerification,
+)
+async def verify_urban_intervention(
+    site_id: str,
+    intervention_id: str,
+    payload: UrbanBeforeAfterRequest,
+    svc: UrbanBeforeAfterService = Depends(urban_before_after_service),
+) -> UrbanBeforeAfterVerification:
+    try:
+        return await svc.verify(site_id, intervention_id, payload)
     except FileNotFoundError:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='Site or intervention not found')
     except ValueError as exc:
