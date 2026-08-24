@@ -1,7 +1,10 @@
 import asyncio
+import sys
 from datetime import date, timedelta
 from pathlib import Path
 from tempfile import TemporaryDirectory
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from app.agriculture_schemas import AgricultureFieldCreate, AgricultureFieldHeatRequest
 from app.core.config import Settings
