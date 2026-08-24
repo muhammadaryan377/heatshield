@@ -1,4 +1,6 @@
 import { BrowserRouter, Route, Routes } from 'react-router-dom'
+import { AppErrorBoundary } from './components/app/AppErrorBoundary'
+import { RouteEffects } from './components/app/RouteEffects'
 import { AddWorkerPage } from './pages/AddWorkerPage'
 import { EnterpriseAssetsPage } from './pages/EnterpriseAssetsPage'
 import { EnterpriseHeatRiskReportsPage } from './pages/EnterpriseHeatRiskReportsPage'
@@ -11,6 +13,7 @@ import { GeneratePlanPage } from './pages/GeneratePlanPage'
 import { HeatHistoryPage } from './pages/HeatHistoryPage'
 import { ModuleLandingPage } from './pages/ModuleLandingPage'
 import { ModuleSelectionPage } from './pages/ModuleSelectionPage'
+import { NotFoundPage } from './pages/NotFoundPage'
 import { ReportsPage } from './pages/ReportsPage'
 import { SettingsPage } from './pages/SettingsPage'
 import { SiteIntelligencePage } from './pages/SiteIntelligencePage'
@@ -18,30 +21,34 @@ import { SitesPage } from './pages/SitesPage'
 
 export default function App() {
   return (
-    <BrowserRouter>
-      <Routes>
-        <Route path="/" element={<ModuleSelectionPage />} />
+    <AppErrorBoundary>
+      <BrowserRouter>
+        <RouteEffects />
+        <Routes>
+          <Route path="/" element={<ModuleSelectionPage />} />
 
-        <Route path="/workforce" element={<SiteIntelligencePage />} />
-        <Route path="/workers/new" element={<AddWorkerPage />} />
-        <Route path="/plan" element={<GeneratePlanPage />} />
-        <Route path="/sites" element={<SitesPage />} />
-        <Route path="/heat-history" element={<HeatHistoryPage />} />
+          <Route path="/workforce" element={<SiteIntelligencePage />} />
+          <Route path="/workers/new" element={<AddWorkerPage />} />
+          <Route path="/plan" element={<GeneratePlanPage />} />
+          <Route path="/sites" element={<SitesPage />} />
+          <Route path="/heat-history" element={<HeatHistoryPage />} />
 
-        <Route path="/enterprise" element={<EnterpriseOverviewPage />} />
-        <Route path="/enterprise/sites" element={<EnterpriseSitesPage />} />
-        <Route path="/enterprise/property-exposure" element={<EnterprisePropertyExposurePage />} />
-        <Route path="/enterprise/assets" element={<EnterpriseAssetsPage />} />
-        <Route path="/enterprise/industrial" element={<EnterpriseIndustrialPage />} />
-        <Route path="/enterprise/portfolio-risk" element={<EnterprisePortfolioRiskPage />} />
-        <Route path="/enterprise/reports" element={<EnterpriseHeatRiskReportsPage />} />
-        <Route path="/enterprise/*" element={<ModuleLandingPage module="enterprise" />} />
-        <Route path="/agriculture/*" element={<ModuleLandingPage module="agriculture" />} />
-        <Route path="/urban/*" element={<ModuleLandingPage module="urban" />} />
+          <Route path="/enterprise" element={<EnterpriseOverviewPage />} />
+          <Route path="/enterprise/sites" element={<EnterpriseSitesPage />} />
+          <Route path="/enterprise/property-exposure" element={<EnterprisePropertyExposurePage />} />
+          <Route path="/enterprise/assets" element={<EnterpriseAssetsPage />} />
+          <Route path="/enterprise/industrial" element={<EnterpriseIndustrialPage />} />
+          <Route path="/enterprise/portfolio-risk" element={<EnterprisePortfolioRiskPage />} />
+          <Route path="/enterprise/reports" element={<EnterpriseHeatRiskReportsPage />} />
+          <Route path="/enterprise/*" element={<NotFoundPage />} />
+          <Route path="/agriculture/*" element={<ModuleLandingPage module="agriculture" />} />
+          <Route path="/urban/*" element={<ModuleLandingPage module="urban" />} />
 
-        <Route path="/reports" element={<ReportsPage />} />
-        <Route path="/settings" element={<SettingsPage />} />
-      </Routes>
-    </BrowserRouter>
+          <Route path="/reports" element={<ReportsPage />} />
+          <Route path="/settings" element={<SettingsPage />} />
+          <Route path="*" element={<NotFoundPage />} />
+        </Routes>
+      </BrowserRouter>
+    </AppErrorBoundary>
   )
 }
