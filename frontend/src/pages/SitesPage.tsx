@@ -150,7 +150,7 @@ export function SitesPage() {
                         <button className="button button--secondary" onClick={() => navigate(`/workers/new?site=${encodeURIComponent(selectedSite.id)}`)}><UserPlus size={16} /> Add Worker</button>
                         <button className="button button--primary" onClick={() => navigate(`/plan?site=${encodeURIComponent(selectedSite.id)}`)}><ClipboardList size={16} /> Plan Today</button>
                         <button className="button button--outline-teal" onClick={() => navigate(`/?site=${encodeURIComponent(selectedSite.id)}`)}><ShieldCheck size={16} /> Live Intelligence</button>
-                        <button className="button button--history" onClick={() => navigate(`/heat-history?site=${encodeURIComponent(selectedSite.id)}`)}><History size={16} /> Heat History</button>
+                        <button className="button button--history" onClick={() => navigate(`/historical-intelligence?site=${encodeURIComponent(selectedSite.id)}`)}><History size={16} /> Historical Intelligence</button>
                       </div>
                     </section>
                     <OperationalZoneManager site={selectedSite} workers={selectedWorkers} onSiteUpdated={siteUpdated} />
