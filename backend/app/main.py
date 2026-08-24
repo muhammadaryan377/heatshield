@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.api.advanced_routes import router as advanced_router
 from app.api.agriculture_routes import router as agriculture_router
 from app.api.report_routes import router as report_router
 from app.api.routes import router
@@ -25,3 +26,4 @@ app.add_middleware(
 app.include_router(router)
 app.include_router(report_router)
 app.include_router(agriculture_router)
+app.include_router(advanced_router)
