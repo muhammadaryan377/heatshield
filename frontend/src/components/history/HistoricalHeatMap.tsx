@@ -1,10 +1,10 @@
-import { Clock3, Flame, Layers3 } from 'lucide-react'
+import { Clock3, Flame, Layers3, ThermometerSun } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { loadGoogleMaps } from '../../lib/googleMaps'
 import type { HistoricalHeatBehaviorResponse, HistoricalHeatCell } from '../../types/history'
 import type { Site } from '../../types/site'
 
-type Metric = 'exceedance' | 'persistence' | 'peak'
+type Metric = 'temperature' | 'exceedance' | 'persistence' | 'peak'
 
 interface HistoricalHeatMapProps {
   site: Site
@@ -16,6 +16,7 @@ interface HistoricalHeatMapProps {
 const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY ?? ''
 
 function cellValue(cell: HistoricalHeatCell, metric: Metric) {
+  if (metric === 'temperature') return cell.temperatureC ?? null
   if (metric === 'exceedance') return cell.exceedanceHours ?? null
   if (metric === 'persistence') return cell.persistenceHours ?? null
   return cell.peakHourUtc ?? null
@@ -24,23 +25,32 @@ function cellValue(cell: HistoricalHeatCell, metric: Metric) {
 function heatColor(value: number, min: number, max: number) {
   const span = Math.max(max - min, 0.01)
   const ratio = Math.max(0, Math.min(1, (value - min) / span))
-  if (ratio < 0.2) return '#1c9a94'
-  if (ratio < 0.4) return '#68b96d'
-  if (ratio < 0.6) return '#e4c64f'
-  if (ratio < 0.8) return '#ef8b2f'
-  return '#df4d45'
+  if (ratio < 0.2) return '#15938f'
+  if (ratio < 0.4) return '#67b66c'
+  if (ratio < 0.6) return '#e0c44e'
+  if (ratio < 0.8) return '#ed8a32'
+  return '#dc4d45'
 }
 
 function metricLabel(metric: Metric) {
+  if (metric === 'temperature') return 'Historical temperature'
   if (metric === 'exceedance') return 'Heat exceedance'
   if (metric === 'persistence') return 'Heat persistence'
   return 'Peak-time behavior'
 }
 
 function cellDetail(cell: HistoricalHeatCell, metric: Metric) {
+  if (metric === 'temperature') return cell.temperatureC == null ? 'No temperature value' : `${cell.temperatureC.toFixed(1)}°C provider temperature value`
   if (metric === 'exceedance') return cell.exceedanceHours == null ? 'No exceedance value' : `${cell.exceedanceHours.toFixed(1)} hours above threshold`
   if (metric === 'persistence') return cell.persistenceHours == null ? 'No persistence value' : `${cell.persistenceHours.toFixed(1)} hour longest continuous run`
   return cell.peakHourLocal ? `Peak hour ${cell.peakHourLocal}` : 'No peak-hour value'
+}
+
+function legendLabel(metric: Metric) {
+  if (metric === 'temperature') return 'FortyGuard temperature value by historical cell'
+  if (metric === 'exceedance') return 'Accumulated hours above selected threshold'
+  if (metric === 'persistence') return 'Longest continuous hours above threshold'
+  return 'Local peak hour by cell'
 }
 
 export function HistoricalHeatMap({ site, result, metric, onMetricChange }: HistoricalHeatMapProps) {
@@ -57,8 +67,8 @@ export function HistoricalHeatMap({ site, result, metric, onMetricChange }: Hist
   const metricValues = useMemo(() => result.cells
     .map((cell) => cellValue(cell, metric))
     .filter((value): value is number => value != null), [metric, result.cells])
-  const min = metric === 'peak' ? 0 : Math.min(...metricValues, 0)
-  const max = metric === 'peak' ? 23 : Math.max(...metricValues, 1)
+  const min = metric === 'peak' ? 0 : metricValues.length ? Math.min(...metricValues) : 0
+  const max = metric === 'peak' ? 23 : metricValues.length ? Math.max(...metricValues) : 1
 
   useEffect(() => {
     if (!apiKey || !containerRef.current) return
@@ -127,15 +137,15 @@ export function HistoricalHeatMap({ site, result, metric, onMetricChange }: Hist
         map,
         paths: cell.polygon,
         strokeColor: color,
-        strokeOpacity: 0.78,
+        strokeOpacity: 0.8,
         strokeWeight: 1,
         fillColor: color,
-        fillOpacity: 0.59,
+        fillOpacity: 0.6,
         clickable: true,
         zIndex: 10,
       })
       const info = new google.maps.InfoWindow({
-        content: `<div style="min-width:170px"><strong>${metricLabel(metric)}</strong><br/><span>${cellDetail(cell, metric)}</span><br/><small>FortyGuard historical cell</small></div>`,
+        content: `<div style="min-width:185px"><strong>${metricLabel(metric)}</strong><br/><span>${cellDetail(cell, metric)}</span><br/><small>FortyGuard historical cell · ${result.startDate} to ${result.endDate}</small></div>`,
       })
       polygon.addListener('click', (event: google.maps.PolyMouseEvent) => {
         infoRef.current.forEach((windowInfo) => windowInfo.close())
@@ -163,8 +173,11 @@ export function HistoricalHeatMap({ site, result, metric, onMetricChange }: Hist
           scale: 12,
         },
       })
+      const detail = sample
+        ? `${sample.temperatureC?.toFixed(1) ?? '—'}°C · ${sample.exceedanceHours?.toFixed(1) ?? '—'} h above threshold`
+        : 'No matched historical cell'
       const info = new google.maps.InfoWindow({
-        content: `<div style="min-width:185px"><strong>${zone.name}</strong><br/><span>${sample ? `${sample.exceedanceHours?.toFixed(1) ?? '—'} h above threshold` : 'No matched historical cell'}</span><br/><small>Supervisor-approved operational zone</small></div>`,
+        content: `<div style="min-width:195px"><strong>${zone.name}</strong><br/><span>${detail}</span><br/><small>Supervisor-approved operational zone</small></div>`,
       })
       marker.addListener('click', () => {
         infoRef.current.forEach((windowInfo) => windowInfo.close())
@@ -173,7 +186,7 @@ export function HistoricalHeatMap({ site, result, metric, onMetricChange }: Hist
       zoneMarkersRef.current.push(marker)
       infoRef.current.push(info)
     })
-  }, [mapVersion, max, metric, min, result.cells, result.zones, site.zones])
+  }, [mapVersion, max, metric, min, result.cells, result.endDate, result.startDate, result.zones, site.zones])
 
   const hasMap = Boolean(apiKey) && !mapError
 
@@ -181,9 +194,9 @@ export function HistoricalHeatMap({ site, result, metric, onMetricChange }: Hist
     <section className="history-map panel">
       <div className="history-map__head">
         <div>
-          <span className="history-eyebrow">FORTYGUARD SPATIAL HISTORY</span>
-          <h2>Historical Heat Map</h2>
-          <p>Click a cell to inspect its verified historical value. Approved zones are shown as labeled markers.</p>
+          <span className="history-eyebrow">FORTYGUARD SPATIAL EVIDENCE</span>
+          <h2>Where does this site store and repeat heat?</h2>
+          <p>Switch between temperature, threshold exceedance, persistence and peak-time behavior. Every colored cell is returned by FortyGuard.</p>
         </div>
         <button type="button" className="history-layer-button" onClick={() => setMapType((current) => current === 'satellite' ? 'roadmap' : 'satellite')} disabled={!hasMap}>
           <Layers3 size={16} /> {mapType === 'satellite' ? 'Road map' : 'Satellite'}
@@ -191,6 +204,7 @@ export function HistoricalHeatMap({ site, result, metric, onMetricChange }: Hist
       </div>
 
       <div className="history-map__tabs" role="group" aria-label="Historical map layer">
+        <button type="button" className={metric === 'temperature' ? 'active' : ''} onClick={() => onMetricChange('temperature')}><ThermometerSun size={15} /> Temperature</button>
         <button type="button" className={metric === 'exceedance' ? 'active' : ''} onClick={() => onMetricChange('exceedance')}><Flame size={15} /> Exceedance</button>
         <button type="button" className={metric === 'persistence' ? 'active' : ''} onClick={() => onMetricChange('persistence')}><Flame size={15} /> Persistence</button>
         <button type="button" className={metric === 'peak' ? 'active' : ''} onClick={() => onMetricChange('peak')}><Clock3 size={15} /> Peak Time</button>
@@ -206,7 +220,7 @@ export function HistoricalHeatMap({ site, result, metric, onMetricChange }: Hist
 
       <div className="history-map__legend">
         <span>{metric === 'peak' ? 'Earlier' : 'Lower'}</span><i /> <span>{metric === 'peak' ? 'Later' : 'Higher'}</span>
-        <strong>{metric === 'exceedance' ? 'Hours above threshold' : metric === 'persistence' ? 'Longest continuous hours' : 'Local peak hour by cell'}</strong>
+        <strong>{legendLabel(metric)}</strong>
       </div>
     </section>
   )
