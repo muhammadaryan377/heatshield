@@ -22,7 +22,7 @@ import type { HistoricalHeatBehaviorResponse, HistoricalZoneSample } from '../ty
 import type { Site } from '../types/site'
 
 const STORAGE_KEY = 'heatshield:selected-site'
-type Period = 7 | 30 | 90 | 'custom'
+type Period = 7 | 14 | 30 | 'custom'
 type MapMetric = 'exceedance' | 'persistence' | 'peak'
 
 function dateOnly(date: Date) {
@@ -37,6 +37,12 @@ function presetRange(days: number) {
   const start = new Date(end)
   start.setDate(end.getDate() - (days - 1))
   return { startDate: dateOnly(start), endDate: dateOnly(end) }
+}
+
+function inclusiveDays(start: string, end: string) {
+  const startDate = new Date(`${start}T00:00:00Z`)
+  const endDate = new Date(`${end}T00:00:00Z`)
+  return Math.floor((endDate.getTime() - startDate.getTime()) / 86_400_000) + 1
 }
 
 function formatDate(value: string) {
@@ -121,6 +127,10 @@ export function HeatHistoryPage() {
         setError('Custom start date must be on or before the end date.')
         return
       }
+      if (inclusiveDays(customStart, customEnd) > 31) {
+        setError('FortyGuard range-of-days analysis supports a maximum 31-day window per run.')
+        return
+      }
       range = { startDate: customStart, endDate: customEnd }
     } else {
       range = presetRange(period)
@@ -170,7 +180,7 @@ export function HeatHistoryPage() {
             </div>
             <div className="history-intro__facts">
               <span><MapPinned size={16} /> {selectedSite.zones.filter((zone) => zone.operationalApproved).length} approved zone{selectedSite.zones.filter((zone) => zone.operationalApproved).length === 1 ? '' : 's'}</span>
-              <span><ShieldCheck size={16} /> U.S. historical coverage</span>
+              <span><ShieldCheck size={16} /> Historical coverage from 2019</span>
               <span><Sparkles size={16} /> 3 provider analyses per run</span>
             </div>
           </section>
@@ -179,14 +189,14 @@ export function HeatHistoryPage() {
             <div className="history-control-group history-control-group--period">
               <label>Analysis period</label>
               <div className="history-period-switch">
-                {[7, 30, 90].map((days) => <button key={days} type="button" className={period === days ? 'active' : ''} onClick={() => { setPeriod(days as 7 | 30 | 90); setResult(null) }}>Last {days} days</button>)}
+                {[7, 14, 30].map((days) => <button key={days} type="button" className={period === days ? 'active' : ''} onClick={() => { setPeriod(days as 7 | 14 | 30); setResult(null) }}>Last {days} days</button>)}
                 <button type="button" className={period === 'custom' ? 'active' : ''} onClick={() => { setPeriod('custom'); setResult(null) }}>Custom</button>
               </div>
             </div>
 
             {period === 'custom' && <div className="history-custom-dates">
-              <label><span>Start date</span><input type="date" value={customStart} min="2021-01-01" onChange={(event) => { setCustomStart(event.target.value); setResult(null) }} /></label>
-              <label><span>End date</span><input type="date" value={customEnd} min="2021-01-01" onChange={(event) => { setCustomEnd(event.target.value); setResult(null) }} /></label>
+              <label><span>Start date</span><input type="date" value={customStart} min="2019-01-01" onChange={(event) => { setCustomStart(event.target.value); setResult(null) }} /></label>
+              <label><span>End date</span><input type="date" value={customEnd} min="2019-01-01" onChange={(event) => { setCustomEnd(event.target.value); setResult(null) }} /></label>
             </div>}
 
             <label className="history-field"><span>Heat threshold</span><div className="history-threshold"><input type="number" min={-20} max={160} step={1} value={thresholdF} onChange={(event) => { setThresholdF(Number(event.target.value)); setResult(null) }} /><strong>°F</strong></div><small>{fahrenheitToC(thresholdF).toFixed(1)}°C sent to FortyGuard</small></label>
