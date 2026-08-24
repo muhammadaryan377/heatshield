@@ -379,7 +379,7 @@ export function EnterpriseIndustrialPage() {
   ].slice(0, 5)
 
   const outlook = intelligence?.forecast?.slice(0, 8) ?? []
-  const noOpPick = useCallback(() => undefined, [])
+  const noOpPick = useCallback((): void => undefined, [])
 
   const selectSite = (siteId: string) => {
     setSelectedSiteId(siteId)
