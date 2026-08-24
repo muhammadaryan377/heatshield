@@ -16,6 +16,7 @@ import { EnterpriseOverviewPage } from './pages/EnterpriseOverviewPage'
 import { EnterprisePortfolioRiskPage } from './pages/EnterprisePortfolioRiskPage'
 import { EnterprisePropertyExposurePage } from './pages/EnterprisePropertyExposurePage'
 import { EnterpriseSitesPage } from './pages/EnterpriseSitesPage'
+import { FortyGuardIntelligencePage } from './pages/FortyGuardIntelligencePage'
 import { GeneratePlanPage } from './pages/GeneratePlanPage'
 import { HeatHistoryPage } from './pages/HeatHistoryPage'
 import { ModuleSelectionPage } from './pages/ModuleSelectionPage'
@@ -55,6 +56,7 @@ export default function App() {
           <Route path="/enterprise/industrial" element={<EnterpriseIndustrialPage />} />
           <Route path="/enterprise/portfolio-risk" element={<EnterprisePortfolioRiskPage />} />
           <Route path="/enterprise/reports" element={<EnterpriseHeatRiskReportsPage />} />
+          <Route path="/enterprise/fortyguard-intelligence" element={<FortyGuardIntelligencePage />} />
           <Route path="/enterprise/*" element={<NotFoundPage />} />
 
           <Route path="/agriculture" element={<AgricultureOverviewPage />} />
