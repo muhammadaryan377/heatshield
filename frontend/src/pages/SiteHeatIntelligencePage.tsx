@@ -72,13 +72,6 @@ function topZone(zones: HistoricalZoneSample[], key: 'temperatureC' | 'exceedanc
     .sort((a, b) => (b[key] ?? -Infinity) - (a[key] ?? -Infinity))[0] ?? null
 }
 
-function formatDate(value?: string | null) {
-  if (!value) return '—'
-  const date = new Date(`${value}T00:00:00`)
-  if (Number.isNaN(date.getTime())) return value
-  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
-}
-
 function segmentLeaders(segments: Record<string, number>) {
   return Object.entries(segments)
     .sort((a, b) => b[1] - a[1])
@@ -196,7 +189,7 @@ export function SiteHeatIntelligencePage() {
     const timer = window.setInterval(() => {
       api.getFortyGuardHeatIntelligenceStatus(deepSubmission.activityId, controller.signal)
         .then((status) => setDeepStatus(status))
-        .catch(() => undefined)
+        .catch((): void => undefined)
     }, 3000)
     return () => {
       controller.abort()
