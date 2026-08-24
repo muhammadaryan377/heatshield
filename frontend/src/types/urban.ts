@@ -50,7 +50,7 @@ export interface UrbanInterventionEvidence {
   cellId: string
   latitude: number
   longitude: number
-  cellPolygon: Coordinate[]
+  cellPolygon?: Coordinate[]
   baselineObservedAt: string
   baselineTemperatureC: number
   districtMeanTemperatureC: number
