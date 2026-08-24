@@ -65,7 +65,7 @@ export function FieldBoundaryModal({ open, farm, onClose, onCreated }: FieldBoun
   const [points, setPoints] = useState<Coordinate[]>([])
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [mapMessage, setMapMessage] = useState('Click around the actual field boundary inside the farm.')
+  const [mapMessage, setMapMessage] = useState<string | null>('Click around the actual field boundary inside the farm.')
 
   const hasBoundary = points.length >= 3
   const canSave = Boolean(farm && name.trim().length >= 2 && hasBoundary && !saving)
