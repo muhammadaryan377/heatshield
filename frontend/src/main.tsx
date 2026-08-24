@@ -6,13 +6,16 @@ import './functional.css'
 import './site-builder-v2.css'
 import './sidebar-collapse.css'
 import './add-worker-v2.css'
+import './add-worker-intelligence.css'
 import './plan.css'
 import './sites-reports.css'
 import './thermal-map.css'
 import './product-polish.css'
 import './fortyguard-intelligence.css'
 import './operational-planner.css'
+import './operational-planner-v2.css'
 import './historical-heat.css'
+import './historical-heat-intelligence.css'
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
