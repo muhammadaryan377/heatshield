@@ -16,6 +16,7 @@ import './operational-planner.css'
 import './operational-planner-v2.css'
 import './historical-heat.css'
 import './historical-heat-intelligence.css'
+import './workforce-reports.css'
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
