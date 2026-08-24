@@ -3,20 +3,17 @@ import {
   BarChart3,
   Bell,
   BrainCircuit,
-  Building2,
   CheckCircle2,
   Factory,
-  HardHat,
   Layers3,
   LockKeyhole,
   Settings,
   ShieldCheck,
-  Sprout,
-  University,
 } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { BrandLogo } from '../components/ui/BrandLogo'
 import '../module-selection.css'
+import '../module-selection-artwork.css'
 
 const primaryModules = [
   {
@@ -24,7 +21,7 @@ const primaryModules = [
     title: 'Workforce Safety',
     description: 'Protect crews with site heat intelligence, worker exposure context, risk decisions and AI-assisted plans.',
     route: '/workforce',
-    icon: HardHat,
+    artwork: '/module-artwork/workforce.webp',
     capability: 'Workers · Heat Map · Risk · AI Plans',
   },
   {
@@ -32,7 +29,7 @@ const primaryModules = [
     title: 'Enterprise',
     description: 'Turn FortyGuard heat intelligence into property, asset and portfolio-level thermal exposure decisions.',
     route: '/enterprise',
-    icon: Building2,
+    artwork: '/module-artwork/enterprise.webp',
     capability: 'Sites · Assets · Portfolio Risk',
   },
   {
@@ -40,7 +37,7 @@ const primaryModules = [
     title: 'Agriculture',
     description: 'Understand field heat conditions, crop stress and operational timing using the same thermal intelligence core.',
     route: '/agriculture',
-    icon: Sprout,
+    artwork: '/module-artwork/agriculture.webp',
     capability: 'Fields · Crop Stress · Irrigation',
   },
   {
@@ -48,7 +45,7 @@ const primaryModules = [
     title: 'Urban Intelligence',
     description: 'Analyze districts, heat islands and interventions with evidence that stays traceable to the thermal source.',
     route: '/urban',
-    icon: University,
+    artwork: '/module-artwork/urban.webp',
     capability: 'Districts · Heat Islands · Interventions',
   },
 ] as const
@@ -121,12 +118,10 @@ export function ModuleSelectionPage() {
         </section>
 
         <section className="module-card-grid" aria-label="HeatShield modules">
-          {primaryModules.map(({ id, title, description, route, icon: Icon, capability }) => (
+          {primaryModules.map(({ id, title, description, route, artwork, capability }) => (
             <article key={id} className={`module-card module-card--${id}`}>
               <div className="module-card__visual">
-                <div className="module-card__grid-lines" />
-                <Icon className="module-card__ghost-icon" size={150} strokeWidth={1.05} />
-                <span className="module-card__icon"><Icon size={34} strokeWidth={1.7} /></span>
+                <img className="module-card__artwork" src={artwork} alt="" aria-hidden="true" />
                 <span className="module-card__source"><span /> FortyGuard core</span>
               </div>
               <div className="module-card__body">
