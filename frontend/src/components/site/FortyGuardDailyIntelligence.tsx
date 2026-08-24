@@ -102,7 +102,7 @@ export function FortyGuardDailyIntelligence({ site }: FortyGuardDailyIntelligenc
       <div className="fg-controls">
         <label>
           <span><CalendarDays size={14} /> Analysis date</span>
-          <input type="date" min="2021-01-01" max={today()} value={studyDate} onChange={(event) => { setStudyDate(event.target.value); setProfile(null) }} />
+          <input type="date" min="2019-01-01" max={today()} value={studyDate} onChange={(event) => { setStudyDate(event.target.value); setProfile(null) }} />
         </label>
         <label>
           <span><Gauge size={14} /> Heat threshold</span>
