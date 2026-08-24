@@ -17,6 +17,8 @@ import type {
 } from '../types/site'
 import type { HistoricalHeatBehaviorRequest, HistoricalHeatBehaviorResponse } from '../types/history'
 import type {
+  UrbanBeforeAfterRequest,
+  UrbanBeforeAfterVerification,
   UrbanIntervention,
   UrbanInterventionCreate,
   UrbanInterventionStatus,
@@ -130,6 +132,18 @@ export const api = {
       method: 'PATCH',
       body: JSON.stringify({ status }),
     })
+  },
+  listUrbanBeforeAfterVerifications(siteId: string, interventionId: string, signal?: AbortSignal) {
+    return request<UrbanBeforeAfterVerification[]>(
+      `/api/sites/${siteId}/urban-interventions/${interventionId}/verifications`,
+      { signal },
+    )
+  },
+  verifyUrbanIntervention(siteId: string, interventionId: string, payload: UrbanBeforeAfterRequest, signal?: AbortSignal) {
+    return request<UrbanBeforeAfterVerification>(
+      `/api/sites/${siteId}/urban-interventions/${interventionId}/verify`,
+      { method: 'POST', body: JSON.stringify(payload), signal },
+    )
   },
   generateOperationalPlanner(siteId: string, payload: OperationalPlannerRequest, signal?: AbortSignal) {
     return request<OperationalHeatPlan>(`/api/sites/${siteId}/operational-planner`, {
