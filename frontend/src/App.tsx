@@ -12,7 +12,6 @@ import { HeatHistoryPage } from './pages/HeatHistoryPage'
 import { ModuleLandingPage } from './pages/ModuleLandingPage'
 import { ModuleSelectionPage } from './pages/ModuleSelectionPage'
 import { ReportsPage } from './pages/ReportsPage'
-import { SettingsPage } from './pages/SettingsPage'
 import { SiteIntelligencePage } from './pages/SiteIntelligencePage'
 import { SitesPage } from './pages/SitesPage'
 
@@ -29,6 +28,7 @@ export default function App() {
         <Route path="/sites" element={<SitesPage />} />
         <Route path="/historical-intelligence" element={<HeatHistoryPage />} />
         <Route path="/heat-history" element={<HeatHistoryPage />} />
+        <Route path="/reports" element={<ReportsPage />} />
 
         <Route path="/enterprise" element={<EnterpriseOverviewPage />} />
         <Route path="/enterprise/sites" element={<EnterpriseSitesPage />} />
@@ -40,9 +40,6 @@ export default function App() {
         <Route path="/enterprise/*" element={<ModuleLandingPage module="enterprise" />} />
         <Route path="/agriculture/*" element={<ModuleLandingPage module="agriculture" />} />
         <Route path="/urban/*" element={<ModuleLandingPage module="urban" />} />
-
-        <Route path="/reports" element={<ReportsPage />} />
-        <Route path="/settings" element={<SettingsPage />} />
       </Routes>
     </BrowserRouter>
   )
