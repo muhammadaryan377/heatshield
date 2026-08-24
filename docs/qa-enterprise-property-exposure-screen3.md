@@ -1,0 +1,1 @@
+QA-only marker for Enterprise Property Heat Exposure screen 3 validation. This branch mirrors the feature implementation and exists only to trigger the repository's main-targeted pull-request CI.
