@@ -41,6 +41,10 @@ class EnvironmentalContextResponse(CamelModel):
     solarDni: float | None = None
     solarDhi: float | None = None
     solarDescription: str | None = None
+    temperatureStdDevC: float | None = None
+    overallTemperatureDistribution: list[float] = Field(default_factory=list)
+    normalTemperatureDistribution: dict[str, Any] = Field(default_factory=dict)
+    temperatureFrequency: dict[str, Any] = Field(default_factory=dict)
     message: str | None = None
     cached: bool = False
 
@@ -123,5 +127,4 @@ class FortyGuardUsageResponse(CamelModel):
     creditsLimit: float | None = None
     creditsResetDate: str | None = None
     activityBreakdown: dict[str, Any] = Field(default_factory=dict)
-    raw: dict[str, Any] = Field(default_factory=dict)
     message: str | None = None
