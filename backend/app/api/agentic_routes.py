@@ -3,21 +3,21 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from app.agentic_models import AgenticHeatPlan
 from app.core.config import Settings, get_settings
 from app.schemas import OperationalPlannerRequest
-from app.services.agentic_decision_core import AgenticDecisionCoreService
+from app.services.agentic_temporal_core import TemporalAgenticDecisionCoreService
 
 
 router = APIRouter(prefix='/api')
 
 
-def agentic_service(settings: Settings = Depends(get_settings)) -> AgenticDecisionCoreService:
-    return AgenticDecisionCoreService(settings)
+def agentic_service(settings: Settings = Depends(get_settings)) -> TemporalAgenticDecisionCoreService:
+    return TemporalAgenticDecisionCoreService(settings)
 
 
 @router.post('/sites/{site_id}/agent/run', response_model=AgenticHeatPlan)
 async def run_agentic_decision(
     site_id: str,
     payload: OperationalPlannerRequest,
-    svc: AgenticDecisionCoreService = Depends(agentic_service),
+    svc: TemporalAgenticDecisionCoreService = Depends(agentic_service),
 ) -> AgenticHeatPlan:
     try:
         return await svc.generate(site_id, payload)
