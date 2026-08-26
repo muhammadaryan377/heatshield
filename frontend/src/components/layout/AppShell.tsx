@@ -1,5 +1,6 @@
 import { PanelLeftOpen } from 'lucide-react'
 import { useState, type PropsWithChildren } from 'react'
+import { ModuleMissionRail } from './ModuleMissionRail'
 import { Sidebar } from './Sidebar'
 import './module-navigation.css'
 
@@ -40,7 +41,10 @@ export function AppShell({ children, module = 'workforce' }: AppShellProps) {
         </button>
       )}
 
-      <main className="app-shell__main">{children}</main>
+      <main className="app-shell__main">
+        <ModuleMissionRail module={module} />
+        {children}
+      </main>
     </div>
   )
 }

@@ -1,0 +1,19 @@
+.module-secondary-grid--agentic {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.module-secondary-card--agent {
+  background: linear-gradient(110deg, #eef9f6, #fff 62%);
+}
+
+.module-secondary-card--agent .module-secondary-card__icon {
+  color: #0d8277;
+  border-color: rgba(13, 130, 119, .18);
+  background: #f5fcfa;
+}
+
+@media (max-width: 1040px) {
+  .module-secondary-grid--agentic {
+    grid-template-columns: 1fr;
+  }
+}

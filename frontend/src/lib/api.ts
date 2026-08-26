@@ -17,6 +17,7 @@ import type {
 } from '../types/site'
 import type { HistoricalHeatBehaviorRequest, HistoricalHeatBehaviorResponse } from '../types/history'
 import type { EnterpriseAsset, EnterpriseAssetCreate } from '../types/asset'
+import type { DomainAgentPlan, DomainAgentRequest } from '../types/domainAgent'
 import type {
   UrbanBeforeAfterRequest,
   UrbanBeforeAfterVerification,
@@ -196,6 +197,13 @@ export const api = {
       `/api/sites/${siteId}/urban-interventions/${interventionId}/verify`,
       { method: 'POST', body: JSON.stringify(payload), signal },
     )
+  },
+  runDomainAgent(siteId: string, payload: DomainAgentRequest, signal?: AbortSignal) {
+    return request<DomainAgentPlan>(`/api/sites/${siteId}/domain-agent`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+      signal,
+    })
   },
   generateOperationalPlanner(siteId: string, payload: OperationalPlannerRequest, signal?: AbortSignal) {
     return request<OperationalHeatPlan>(`/api/sites/${siteId}/operational-planner`, {
