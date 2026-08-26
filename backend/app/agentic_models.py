@@ -56,7 +56,7 @@ class AgentWorkerDecision(CamelModel):
     heatIndexC: float | None = None
     evidenceFreshness: Literal['current_hour', 'recent_completed_hour', 'unavailable']
     baselineObservedAt: str | None = None
-    temporalEvidence: AgentTemporalEvidence
+    temporalEvidence: AgentTemporalEvidence | None = None
     candidates: list[AgentOption] = Field(default_factory=list)
     recommendedChoice: Literal['now', 'better_time', 'better_place', 'review']
     recommendation: str
