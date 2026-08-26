@@ -201,7 +201,7 @@ function buildCandidates(history: HistoricalHeatBehaviorResponse | null, thermal
   }
 
   if (!thermalReady || !thermal) return []
-  return [...thermal.tiles].sort((a, b) => b.temperatureC - a.temperatureC).map((tile) => {
+  return [...thermal.tiles].sort((a, b) => b.temperatureC - a.temperatureC).map((tile): Candidate => {
     const lift = meanTemperature == null ? null : tile.temperatureC - meanTemperature
     return {
       id: tile.id,
@@ -497,7 +497,6 @@ export function UrbanInterventionsPage() {
   const [morphologyError, setMorphologyError] = useState<string | null>(null)
   const [draft, setDraft] = useState<Draft | null>(null)
   const [refreshKey, setRefreshKey] = useState(0)
-
   const refresh = useCallback(() => setRefreshKey((value) => value + 1), [])
 
   useEffect(() => {
