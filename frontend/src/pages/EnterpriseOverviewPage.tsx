@@ -24,6 +24,7 @@ import { AppShell } from '../components/layout/AppShell'
 import { CreateSiteModal } from '../components/site/CreateSiteModal'
 import { StatePanel } from '../components/ui/StatePanel'
 import { api } from '../lib/api'
+import type { EnterpriseAsset } from '../types/asset'
 import type { RiskLevel, Site, SiteIntelligence, ThermalMapResponse } from '../types/site'
 import '../enterprise-overview.css'
 
@@ -84,11 +85,14 @@ export function EnterpriseOverviewPage() {
   const [selectedSiteId, setSelectedSiteId] = useState<string | null>(null)
   const [data, setData] = useState<SiteIntelligence | null>(null)
   const [thermal, setThermal] = useState<ThermalMapResponse | null>(null)
+  const [assets, setAssets] = useState<EnterpriseAsset[]>([])
   const [sitesLoading, setSitesLoading] = useState(true)
   const [loading, setLoading] = useState(false)
   const [thermalLoading, setThermalLoading] = useState(false)
+  const [assetsLoading, setAssetsLoading] = useState(false)
   const [intelError, setIntelError] = useState<string | null>(null)
   const [thermalError, setThermalError] = useState<string | null>(null)
+  const [assetError, setAssetError] = useState<string | null>(null)
   const [requestKey, setRequestKey] = useState(0)
   const [createSiteOpen, setCreateSiteOpen] = useState(false)
 
@@ -128,8 +132,10 @@ export function EnterpriseOverviewPage() {
     if (!selectedSiteId) {
       setData(null)
       setThermal(null)
+      setAssets([])
       setLoading(false)
       setThermalLoading(false)
+      setAssetsLoading(false)
       return
     }
 
@@ -140,8 +146,10 @@ export function EnterpriseOverviewPage() {
     let active = true
     setLoading(true)
     setThermalLoading(true)
+    setAssetsLoading(true)
     setIntelError(null)
     setThermalError(null)
+    setAssetError(null)
 
     api.getSiteIntelligence(selectedSiteId, controller.signal)
       .then((response) => {
@@ -174,6 +182,20 @@ export function EnterpriseOverviewPage() {
       })
       .finally(() => {
         if (active && !controller.signal.aborted) setThermalLoading(false)
+      })
+
+    api.listEnterpriseAssets(selectedSiteId, controller.signal)
+      .then((response) => {
+        if (!active || controller.signal.aborted) return
+        setAssets(response)
+      })
+      .catch((error: unknown) => {
+        if (!active || isAbortError(error, controller.signal)) return
+        setAssets([])
+        setAssetError(error instanceof Error ? error.message : 'Unable to load the enterprise asset registry.')
+      })
+      .finally(() => {
+        if (active && !controller.signal.aborted) setAssetsLoading(false)
       })
 
     return () => {
@@ -212,12 +234,17 @@ export function EnterpriseOverviewPage() {
   const peakWindow = data?.risk?.peakWindowStart && data.risk.peakWindowEnd
     ? `${data.risk.peakWindowStart} – ${data.risk.peakWindowEnd}`
     : 'No peak window returned'
-  const conditionSource = data?.conditionSourceLabel ?? (data?.conditionSource === 'fortyguard' ? 'FortyGuard' : data?.conditionSource === 'nws' ? 'NWS fallback' : 'Unavailable')
+  const conditionSource = data?.conditionSourceLabel ?? (data?.conditionSource === 'fortyguard' ? 'FortyGuard' : data?.conditionSource === 'nws' ? 'NWS atmospheric context' : 'Unavailable')
+  const businessCriticalAssets = assets.filter((asset) => asset.criticality === 'high' || asset.criticality === 'critical')
+  const coolingDependentAssets = assets.filter((asset) => asset.coolingDependent)
+  const operationalAssets = assets.filter((asset) => asset.status === 'operational')
+  const selectedSiteQuery = selectedSite ? `?site=${encodeURIComponent(selectedSite.id)}` : ''
 
   const selectSite = (siteId: string) => {
     setSelectedSiteId(siteId)
     setData(null)
     setThermal(null)
+    setAssets([])
   }
 
   const siteCreated = (site: Site) => {
@@ -225,6 +252,7 @@ export function EnterpriseOverviewPage() {
     setSelectedSiteId(site.id)
     setData(null)
     setThermal(null)
+    setAssets([])
   }
 
   return (
@@ -289,7 +317,7 @@ export function EnterpriseOverviewPage() {
                   {evidenceVerified ? 'Spatial evidence verified' : thermalLoading ? 'Checking FortyGuard' : 'Spatial evidence incomplete'}
                 </strong>
                 <small>Conditions: {conditionSource}</small>
-                <button type="button" onClick={reload} disabled={loading || thermalLoading}><RefreshCw size={14} className={loading || thermalLoading ? 'spin' : ''} /> Refresh evidence</button>
+                <button type="button" onClick={reload} disabled={loading || thermalLoading || assetsLoading}><RefreshCw size={14} className={loading || thermalLoading || assetsLoading ? 'spin' : ''} /> Refresh evidence</button>
               </div>
             </section>
 
@@ -304,6 +332,13 @@ export function EnterpriseOverviewPage() {
               <div className="enterprise-source-warning">
                 <AlertTriangle size={16} />
                 <span>Latest condition refresh failed. The last successful site response remains visible.</span>
+              </div>
+            )}
+
+            {assetError && (
+              <div className="enterprise-source-warning">
+                <AlertTriangle size={16} />
+                <span>Asset registry could not be refreshed. Property heat evidence remains available, but infrastructure context is incomplete.</span>
               </div>
             )}
 
@@ -334,9 +369,9 @@ export function EnterpriseOverviewPage() {
                 <small>{thermal?.granularityMeters ? `${thermal.granularityMeters} m FortyGuard analysis` : 'Provider coverage pending'}</small>
               </article>
               <article className={`enterprise-kpi enterprise-kpi--${riskTone(risk)}`}>
-                <span><Activity size={17} /> Decision Priority</span>
+                <span><Activity size={17} /> Environmental Screening</span>
                 <strong>{riskLabel(risk)}</strong>
-                <small>{data?.risk?.summary ?? 'Site-level risk waits for condition evidence'}</small>
+                <small>{data?.risk?.summary ?? 'Environmental screening waits for verified condition evidence'}</small>
               </article>
             </section>
 
@@ -346,11 +381,11 @@ export function EnterpriseOverviewPage() {
               <aside className="enterprise-insights panel">
                 <div className="enterprise-insights__header">
                   <div><span className="enterprise-eyebrow">DECISION CONTEXT</span><h2>Insights</h2></div>
-                  <span className={`enterprise-risk-pill enterprise-risk-pill--${riskTone(risk)}`}>{riskName(risk)}</span>
+                  <span className={`enterprise-risk-pill enterprise-risk-pill--${riskTone(risk)}`}>{riskName(risk)} environment</span>
                 </div>
 
                 <section className="enterprise-insight-block">
-                  <div className="enterprise-insight-block__title"><strong>Top Hotspots</strong><Link to="/enterprise/property-exposure">Open exposure <ArrowRight size={13} /></Link></div>
+                  <div className="enterprise-insight-block__title"><strong>Top Hotspots</strong><Link to={`/enterprise/property-exposure${selectedSiteQuery}`}>Open exposure <ArrowRight size={13} /></Link></div>
                   {hottestTiles.length ? hottestTiles.map((tile, index) => (
                     <div key={tile.id} className="enterprise-hotspot-row">
                       <span className={`enterprise-hotspot-row__rank enterprise-hotspot-row__rank--${index + 1}`}>{index + 1}</span>
@@ -363,10 +398,10 @@ export function EnterpriseOverviewPage() {
                 <section className="enterprise-insight-card">
                   <span className="enterprise-insight-card__icon"><Building2 size={18} /></span>
                   <div>
-                    <span>Asset Exposure</span>
-                    <strong>Asset registry not connected yet</strong>
-                    <p>Attach critical equipment to map heat evidence to operational infrastructure.</p>
-                    <Link to="/enterprise/assets">Connect assets <ArrowRight size={13} /></Link>
+                    <span>Asset Registry</span>
+                    <strong>{assetsLoading ? 'Loading asset registry…' : assets.length ? `${assets.length} registered asset${assets.length === 1 ? '' : 's'}` : 'No assets registered'}</strong>
+                    <p>{assetsLoading ? 'Reading HeatShield Enterprise infrastructure for this site.' : assets.length ? `${operationalAssets.length} operational · ${businessCriticalAssets.length} high/critical business assets · ${coolingDependentAssets.length} cooling-dependent.` : 'Register critical equipment so property heat evidence can be connected to operational infrastructure.'}</p>
+                    <Link to={`/enterprise/assets${selectedSiteQuery}`}>{assets.length ? 'Open asset intelligence' : 'Register assets'} <ArrowRight size={13} /></Link>
                   </div>
                 </section>
 
@@ -385,7 +420,7 @@ export function EnterpriseOverviewPage() {
                     <span>Evidence Provenance</span>
                     <strong>{evidenceVerified ? 'FortyGuard spatial package verified' : 'Spatial package incomplete'}</strong>
                     <p>{evidenceVerified ? `${thermal?.tileCount} provider cells · ${formatObservedAt(thermal?.observedAt)}` : thermalError ?? 'No verified thermal cells returned.'}</p>
-                    <small>Atmospheric source: {conditionSource}</small>
+                    <small>Atmospheric source: {conditionSource} · Asset source: HeatShield Enterprise</small>
                   </div>
                 </section>
               </aside>
@@ -393,11 +428,12 @@ export function EnterpriseOverviewPage() {
 
             <section className="enterprise-lower-grid">
               <article className="enterprise-summary-card panel">
-                <div className="enterprise-summary-card__title"><span><ShieldCheck size={17} /> Latest Site Analysis</span><Link to="/enterprise/property-exposure">Details <ArrowRight size={13} /></Link></div>
+                <div className="enterprise-summary-card__title"><span><ShieldCheck size={17} /> Latest Site Analysis</span><Link to={`/enterprise/property-exposure${selectedSiteQuery}`}>Details <ArrowRight size={13} /></Link></div>
                 <dl className="enterprise-analysis-list">
                   <div><dt>Spatial evidence</dt><dd className={evidenceVerified ? 'ok' : 'warn'}>{evidenceVerified ? 'Verified' : 'Unavailable'}</dd></div>
                   <div><dt>Provider cells</dt><dd>{evidenceVerified ? thermal?.tileCount ?? 0 : '—'}</dd></div>
                   <div><dt>Conditions source</dt><dd>{conditionSource}</dd></div>
+                  <div><dt>Asset registry</dt><dd>{assetsLoading ? 'Loading' : `${assets.length} registered`}</dd></div>
                   <div><dt>Observed</dt><dd>{formatObservedAt(observedAt)}</dd></div>
                 </dl>
               </article>
@@ -406,20 +442,20 @@ export function EnterpriseOverviewPage() {
                 <div className="enterprise-summary-card__title"><span><Clock3 size={17} /> Operational Risk Window</span><span className={`enterprise-risk-pill enterprise-risk-pill--${riskTone(risk)}`}>{riskName(risk)}</span></div>
                 <strong className="enterprise-window-value">{peakWindow}</strong>
                 <p>{data?.risk?.detail ?? 'HeatShield will show the provider-supported risk window when atmospheric evidence is available.'}</p>
-                <Link to="/enterprise/industrial">Open industrial analysis <ArrowRight size={13} /></Link>
+                <Link to={`/enterprise/industrial${selectedSiteQuery}`}>Open industrial analysis <ArrowRight size={13} /></Link>
               </article>
 
               <article className="enterprise-summary-card panel">
-                <div className="enterprise-summary-card__title"><span><FileText size={17} /> Priority Next Steps</span><Link to="/enterprise/reports">Reports <ArrowRight size={13} /></Link></div>
+                <div className="enterprise-summary-card__title"><span><FileText size={17} /> Priority Next Steps</span><Link to={`/enterprise/reports${selectedSiteQuery}`}>Reports <ArrowRight size={13} /></Link></div>
                 <ol className="enterprise-next-steps">
                   <li><span>1</span><div><strong>Inspect mapped hotspot zones</strong><small>Use Property Heat Exposure for thresholds, persistence and exceedance.</small></div></li>
-                  <li><span>2</span><div><strong>Attach critical assets</strong><small>Connect transformers, HVAC and operational infrastructure to site coordinates.</small></div></li>
+                  <li><span>2</span><div><strong>{assets.length ? 'Review critical asset exposure' : 'Attach critical assets'}</strong><small>{assets.length ? `${businessCriticalAssets.length} high/critical assets are registered; connect them to the highest-exposure cells.` : 'Connect transformers, HVAC and operational infrastructure to real site coordinates.'}</small></div></li>
                   <li><span>3</span><div><strong>Review decision window</strong><small>Move from evidence to a reviewable operational action, not an automatic intervention.</small></div></li>
                 </ol>
               </article>
 
               <article className="enterprise-summary-card enterprise-summary-card--chart panel">
-                <div className="enterprise-summary-card__title"><span><Activity size={17} /> Temperature Outlook</span><small>{forecast.length ? 'Site conditions' : 'No forecast'}</small></div>
+                <div className="enterprise-summary-card__title"><span><Activity size={17} /> Temperature Outlook</span><small>{forecast.length ? 'Atmospheric context' : 'No forecast'}</small></div>
                 {forecast.length ? (
                   <div className="enterprise-forecast-chart">
                     <ResponsiveContainer width="100%" height="100%">
@@ -432,7 +468,7 @@ export function EnterpriseOverviewPage() {
                     </ResponsiveContainer>
                   </div>
                 ) : (
-                  <div className="enterprise-chart-empty">No forecast points were returned for this site.</div>
+                  <div className="enterprise-chart-empty">No atmospheric forecast points were returned for this site.</div>
                 )}
               </article>
             </section>
