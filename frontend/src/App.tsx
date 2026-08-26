@@ -33,6 +33,7 @@ import { UrbanOverviewPage } from './pages/UrbanOverviewPage'
 import './agriculture-polish.css'
 
 const AGRICULTURE_FARM_STORAGE_KEY = 'heatshield:selected-agriculture-farm'
+const URBAN_DISTRICT_STORAGE_KEY = 'heatshield:selected-urban-district'
 
 function RootRoute() {
   const location = useLocation()
@@ -49,6 +50,21 @@ function AgricultureContextRoute({ children }: { children: React.ReactNode }) {
 
   if (!requestedFarm && storedFarm) {
     search.set('farm', storedFarm)
+    const query = search.toString()
+    return <Navigate to={`${location.pathname}${query ? `?${query}` : ''}`} replace />
+  }
+
+  return children
+}
+
+function UrbanContextRoute({ children }: { children: React.ReactNode }) {
+  const location = useLocation()
+  const search = new URLSearchParams(location.search)
+  const requestedDistrict = search.get('district')
+  const storedDistrict = typeof window !== 'undefined' ? window.localStorage.getItem(URBAN_DISTRICT_STORAGE_KEY) : null
+
+  if (!requestedDistrict && storedDistrict) {
+    search.set('district', storedDistrict)
     const query = search.toString()
     return <Navigate to={`${location.pathname}${query ? `?${query}` : ''}`} replace />
   }
@@ -92,12 +108,12 @@ export default function App() {
           <Route path="/agriculture/alerts" element={<AgricultureContextRoute><AgricultureAlertsPage /></AgricultureContextRoute>} />
           <Route path="/agriculture/*" element={<NotFoundPage />} />
 
-          <Route path="/urban" element={<UrbanOverviewPage />} />
-          <Route path="/urban/districts" element={<UrbanDistrictsPage />} />
-          <Route path="/urban/heat-islands" element={<UrbanHeatIslandsPage />} />
-          <Route path="/urban/analysis" element={<UrbanAnalysisPage />} />
-          <Route path="/urban/interventions" element={<UrbanInterventionsPage />} />
-          <Route path="/urban/before-after" element={<UrbanBeforeAfterPage />} />
+          <Route path="/urban" element={<UrbanContextRoute><UrbanOverviewPage /></UrbanContextRoute>} />
+          <Route path="/urban/districts" element={<UrbanContextRoute><UrbanDistrictsPage /></UrbanContextRoute>} />
+          <Route path="/urban/heat-islands" element={<UrbanContextRoute><UrbanHeatIslandsPage /></UrbanContextRoute>} />
+          <Route path="/urban/analysis" element={<UrbanContextRoute><UrbanAnalysisPage /></UrbanContextRoute>} />
+          <Route path="/urban/interventions" element={<UrbanContextRoute><UrbanInterventionsPage /></UrbanContextRoute>} />
+          <Route path="/urban/before-after" element={<UrbanContextRoute><UrbanBeforeAfterPage /></UrbanContextRoute>} />
           <Route path="/urban/*" element={<NotFoundPage />} />
 
           <Route path="*" element={<NotFoundPage />} />
