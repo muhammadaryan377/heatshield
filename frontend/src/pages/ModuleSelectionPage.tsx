@@ -1,13 +1,12 @@
 import {
+  Activity,
   ArrowRight,
   BarChart3,
-  Bell,
   BrainCircuit,
   CheckCircle2,
   Factory,
   Layers3,
   LockKeyhole,
-  Settings,
   ShieldCheck,
 } from 'lucide-react'
 import { Link } from 'react-router-dom'
@@ -90,10 +89,6 @@ export function ModuleSelectionPage() {
               <strong>FortyGuard</strong>
             </span>
           </div>
-          <button type="button" className="module-header-icon" aria-label="Notifications">
-            <Bell size={19} strokeWidth={1.8} />
-            <span className="module-header-icon__dot" />
-          </button>
           <div className="module-user-card" aria-label="Current workspace">
             <span className="module-user-card__avatar">HS</span>
             <span>
@@ -148,12 +143,12 @@ export function ModuleSelectionPage() {
             <ArrowRight size={19} />
           </Link>
 
-          <Link to="/settings" className="module-secondary-card module-secondary-card--settings">
-            <span className="module-secondary-card__icon"><Settings size={28} /></span>
+          <Link to="/platform-readiness" className="module-secondary-card module-secondary-card--settings">
+            <span className="module-secondary-card__icon"><Activity size={28} /></span>
             <span className="module-secondary-card__copy">
-              <small>PLATFORM</small>
-              <strong>Settings</strong>
-              <span>Manage sites, integrations, workspace and intelligence configuration.</span>
+              <small>PLATFORM CONTROL</small>
+              <strong>Platform Readiness</strong>
+              <span>Check providers, real workspace data and module prerequisites before operational use.</span>
             </span>
             <ArrowRight size={19} />
           </Link>
