@@ -23,8 +23,8 @@ const missions: Record<Exclude<HeatShieldModule, 'global'>, MissionConfig> = {
     steps: [
       { label: 'Prepare', detail: 'Site, crew and approved zones', to: '/sites', matches: ['/sites', '/workers/new', '/add-worker'] },
       { label: 'Observe', detail: 'Current site & worker exposure', to: '/workforce', matches: ['/workforce', '/historical-intelligence', '/heat-history'] },
-      { label: 'Decide', detail: 'Run the HeatShield Agent', to: '/plan', matches: ['/plan'] },
-      { label: 'Approve & verify', detail: 'Supervisor gate + fresh evidence', to: '/plan', matches: ['/plan'] },
+      { label: 'Decide', detail: 'Run domain mission agent', to: '/agent?module=workforce', matches: ['/agent'] },
+      { label: 'Approve & verify', detail: 'Worker action + fresh FortyGuard', to: '/plan', matches: ['/plan'] },
     ],
   },
   enterprise: {
@@ -33,8 +33,8 @@ const missions: Record<Exclude<HeatShieldModule, 'global'>, MissionConfig> = {
     steps: [
       { label: 'Prepare', detail: 'Register sites and assets', to: '/enterprise/sites', matches: ['/enterprise/sites', '/enterprise/assets'] },
       { label: 'Observe', detail: 'Measure property exposure', to: '/enterprise/property-exposure', matches: ['/enterprise', '/enterprise/property-exposure'] },
-      { label: 'Prioritize', detail: 'Rank site and asset risk', to: '/enterprise/portfolio-risk', matches: ['/enterprise/portfolio-risk'] },
-      { label: 'Act & document', detail: 'Industrial response + evidence report', to: '/enterprise/industrial', matches: ['/enterprise/industrial', '/enterprise/reports'] },
+      { label: 'Decide', detail: 'Rank next engineering review', to: '/agent?module=enterprise', matches: ['/agent'] },
+      { label: 'Act & document', detail: 'Industrial review + report', to: '/enterprise/industrial', matches: ['/enterprise/industrial', '/enterprise/portfolio-risk', '/enterprise/reports'] },
     ],
   },
   agriculture: {
@@ -43,8 +43,8 @@ const missions: Record<Exclude<HeatShieldModule, 'global'>, MissionConfig> = {
     steps: [
       { label: 'Prepare', detail: 'Farm and field boundaries', to: '/agriculture/fields', matches: ['/agriculture/farms', '/agriculture/fields'] },
       { label: 'Observe', detail: 'Crop and field heat evidence', to: '/agriculture/crop-heat-stress', matches: ['/agriculture', '/agriculture/crop-heat-stress'] },
-      { label: 'Decide', detail: 'Work window or irrigation priority', to: '/agriculture/field-work', matches: ['/agriculture/field-work', '/agriculture/irrigation'] },
-      { label: 'Monitor', detail: 'Threshold and persistence alerts', to: '/agriculture/alerts', matches: ['/agriculture/alerts'] },
+      { label: 'Decide', detail: 'Rank field operation priority', to: '/agent?module=agriculture', matches: ['/agent'] },
+      { label: 'Act & monitor', detail: 'Field work, inspection, alerts', to: '/agriculture/field-work', matches: ['/agriculture/field-work', '/agriculture/irrigation', '/agriculture/alerts'] },
     ],
   },
   urban: {
@@ -53,7 +53,7 @@ const missions: Record<Exclude<HeatShieldModule, 'global'>, MissionConfig> = {
     steps: [
       { label: 'Prepare', detail: 'District boundary', to: '/urban/districts', matches: ['/urban/districts'] },
       { label: 'Observe', detail: 'Heat islands and drivers', to: '/urban/heat-islands', matches: ['/urban', '/urban/heat-islands', '/urban/analysis'] },
-      { label: 'Decide', detail: 'Create intervention', to: '/urban/interventions', matches: ['/urban/interventions'] },
+      { label: 'Decide', detail: 'Choose evidence-bound next step', to: '/agent?module=urban', matches: ['/agent', '/urban/interventions'] },
       { label: 'Verify', detail: 'Matched Before / After', to: '/urban/before-after', matches: ['/urban/before-after'] },
     ],
   },
