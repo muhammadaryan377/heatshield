@@ -10,6 +10,7 @@ import { AgricultureFieldsPage } from './pages/AgricultureFieldsPage'
 import { AgricultureFieldWorkPlannerPage } from './pages/AgricultureFieldWorkPlannerPage'
 import { AgricultureIrrigationPlannerPage } from './pages/AgricultureIrrigationPlannerPage'
 import { AgricultureOverviewPage } from './pages/AgricultureOverviewPage'
+import { CommandAgentPage } from './pages/CommandAgentPage'
 import { EnterpriseAssetsPage } from './pages/EnterpriseAssetsPage'
 import { EnterpriseHeatRiskReportsPage } from './pages/EnterpriseHeatRiskReportsPage'
 import { EnterpriseIndustrialPage } from './pages/EnterpriseIndustrialPage'
@@ -80,6 +81,7 @@ export default function App() {
         <Routes>
           <Route path="/" element={<RootRoute />} />
           <Route path="/platform-readiness" element={<PlatformReadinessPage />} />
+          <Route path="/agent" element={<CommandAgentPage />} />
 
           <Route path="/workforce" element={<SiteIntelligencePage />} />
           <Route path="/workers/new" element={<AddWorkerPage />} />
