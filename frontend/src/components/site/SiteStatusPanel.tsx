@@ -43,18 +43,21 @@ export function SiteStatusPanel({ data, onRefresh }: SiteStatusPanelProps) {
   const navigate = useNavigate()
   const [reasoningOpen, setReasoningOpen] = useState(false)
   const [evidenceOpen, setEvidenceOpen] = useState(false)
-  const activeWorkers = data.workers.filter((worker) => worker.status !== 'offsite')
+  const activeWorkers = data.workers.filter((worker) => worker.status === 'active')
+  const breakWorkers = data.workers.filter((worker) => worker.status === 'break')
   const highWorkers = activeWorkers.filter((worker) => worker.risk === 'high' || worker.risk === 'extreme')
   const elevatedWorkers = activeWorkers.filter((worker) => worker.risk === 'medium' || worker.risk === 'high' || worker.risk === 'extreme')
   const conditions = data.conditions
   const riskLabel = data.risk ? data.risk.level.charAt(0).toUpperCase() + data.risk.level.slice(1) : '—'
   const source = data.conditionSourceLabel ?? (data.conditionSource === 'nws' ? 'National Weather Service' : data.conditionSource === 'fortyguard' ? 'FortyGuard' : 'Provider')
   const providerFooter = conditions ? `${data.isLive ? 'Current' : 'Verified'} • ${source}` : 'Awaiting provider'
-  const statusLabel = data.conditionSource === 'fortyguard' && data.thermalStatus === 'verified'
+  const spatialVerified = data.conditionSource === 'fortyguard' && (data.thermalStatus === 'verified' || data.thermalStatus === 'recent_verified')
+  const currentSpatialVerified = data.conditionSource === 'fortyguard' && data.thermalStatus === 'verified'
+  const statusLabel = currentSpatialVerified
     ? 'FortyGuard current thermal verified'
     : data.conditionSource === 'fortyguard' && data.thermalStatus === 'recent_verified'
       ? 'FortyGuard recent thermal verified'
-      : conditions ? `${source} verified conditions` : 'Waiting for verified data'
+      : conditions ? `${source} environmental context` : 'Waiting for verified data'
 
   const decision = useMemo(() => {
     if (!conditions || !data.risk) {
@@ -66,21 +69,18 @@ export function SiteStatusPanel({ data, onRefresh }: SiteStatusPanelProps) {
         confidenceDetail: 'The evidence set is incomplete.',
       }
     }
-    const confidence = data.conditionSource === 'fortyguard' && data.thermalStatus === 'verified'
-      ? 'High'
-      : data.conditionSource === 'fortyguard' && data.thermalStatus === 'recent_verified'
-        ? 'Medium'
-        : 'Medium'
-    const confidenceDetail = confidence === 'High'
-      ? 'Current FortyGuard thermal evidence, atmospheric context, and worker records are available.'
-      : data.thermalStatus === 'recent_verified'
-        ? 'The latest FortyGuard evidence is verified but not current-hour.'
-        : 'Atmospheric evidence is verified; current FortyGuard spatial evidence is limited.'
+
+    const confidence = currentSpatialVerified ? 'High' : spatialVerified ? 'Medium' : 'Context only'
+    const confidenceDetail = currentSpatialVerified
+      ? 'Current FortyGuard thermal evidence, environmental context, and worker records are available.'
+      : spatialVerified
+        ? 'The latest FortyGuard spatial evidence is verified but not current-hour.'
+        : 'Verified environmental context is available, but current FortyGuard spatial evidence is limited.'
 
     if (highWorkers.length) {
       return {
         title: `Intervention recommended for ${highWorkers.length} worker${highWorkers.length === 1 ? '' : 's'}`,
-        detail: 'Review high-exposure assignments and move strenuous work to a safer time or approved area where possible.',
+        detail: 'Review high-exposure assignments and compare safer timing or approved-area options before changing operations.',
         tone: 'danger',
         confidence,
         confidenceDetail,
@@ -89,20 +89,29 @@ export function SiteStatusPanel({ data, onRefresh }: SiteStatusPanelProps) {
     if (elevatedWorkers.length) {
       return {
         title: 'Active exposure monitoring recommended',
-        detail: `${elevatedWorkers.length} worker${elevatedWorkers.length === 1 ? ' is' : 's are'} at elevated exposure. Maintain hydration, shade and task review controls.`,
+        detail: `${elevatedWorkers.length} worker${elevatedWorkers.length === 1 ? ' is' : 's are'} at elevated screened exposure. Maintain hydration, shade and task-review controls.`,
+        tone: 'watch',
+        confidence,
+        confidenceDetail,
+      }
+    }
+    if (!spatialVerified) {
+      return {
+        title: 'No elevated worker signal; spatial evidence is limited',
+        detail: 'Current environmental screening does not flag an active worker, but HeatShield will not declare normal operations without verified FortyGuard spatial evidence.',
         tone: 'watch',
         confidence,
         confidenceDetail,
       }
     }
     return {
-      title: 'Continue normal operations',
-      detail: 'Current heat conditions and worker context do not require an operational change.',
+      title: 'No operational change recommended from current evidence',
+      detail: 'Verified heat evidence and current active-worker context do not indicate an exposure-driven reassignment at this review point. Continue normal site controls and monitoring.',
       tone: 'safe',
       confidence,
       confidenceDetail,
     }
-  }, [conditions, data.conditionSource, data.risk, data.thermalStatus, elevatedWorkers.length, highWorkers.length])
+  }, [conditions, currentSpatialVerified, data.risk, elevatedWorkers.length, highWorkers.length, spatialVerified])
 
   const nextReview = useMemo(() => {
     const base = data.observedAt ? new Date(data.observedAt) : new Date()
@@ -134,9 +143,9 @@ export function SiteStatusPanel({ data, onRefresh }: SiteStatusPanelProps) {
           <Metric icon={ThermometerSun} label="Temperature" value={conditions ? `${conditions.temperatureC.toFixed(1)}°C` : '—'} footer={providerFooter} tone="warm" />
           <Metric icon={ThermometerSun} label="Heat Index" value={conditions ? `${conditions.heatIndexC.toFixed(1)}°C` : '—'} footer={providerFooter} tone="danger" />
           <Metric icon={Droplets} label="Humidity" value={conditions ? `${conditions.humidityPercent.toFixed(0)}%` : '—'} footer={providerFooter} tone="cool" />
-          <Metric icon={ShieldAlert} label="Risk Level" value={riskLabel} footer={data.risk ? `Calculated from verified ${source} context` : 'Awaiting verified conditions'} tone={data.risk?.level === 'low' ? 'cool' : 'danger'} />
-          <Metric icon={UsersRound} label="Workers Active" value={String(activeWorkers.length)} footer="Assigned to this site" tone="cool" />
-          <Metric icon={UserRound} label="High Exposure" value={String(data.highExposureCount)} footer="Worker context + verified heat" tone="warm" />
+          <Metric icon={ShieldAlert} label="Risk Level" value={riskLabel} footer={data.risk ? 'HeatShield screening from verified environmental context' : 'Awaiting verified conditions'} tone={data.risk?.level === 'low' ? 'cool' : 'danger'} />
+          <Metric icon={UsersRound} label="Workers Active" value={String(activeWorkers.length)} footer={breakWorkers.length ? `${breakWorkers.length} on break` : 'Currently working at this site'} tone="cool" />
+          <Metric icon={UserRound} label="High Exposure" value={String(highWorkers.length)} footer="Active workers requiring review" tone="warm" />
         </div>
 
         <article className={`command-decision command-decision--${decision.tone}`}>
@@ -146,25 +155,25 @@ export function SiteStatusPanel({ data, onRefresh }: SiteStatusPanelProps) {
           </div>
           <div className="command-decision__meta">
             <div><CalendarClock size={14} /><span>Next review</span><strong>{nextReview}</strong></div>
-            <div><UsersRound size={14} /><span>Affected workers</span><strong>{elevatedWorkers.length}</strong></div>
-            <div title={decision.confidenceDetail}><ShieldCheck size={14} /><span>Confidence</span><strong>{decision.confidence}</strong></div>
+            <div><UsersRound size={14} /><span>Affected active workers</span><strong>{elevatedWorkers.length}</strong></div>
+            <div title={decision.confidenceDetail}><ShieldCheck size={14} /><span>Evidence depth</span><strong>{decision.confidence}</strong></div>
           </div>
           <div className="command-decision__actions">
             <button type="button" className="button button--secondary" onClick={() => setReasoningOpen(true)}>View reasoning</button>
-            {(highWorkers.length > 0 || elevatedWorkers.length > 0) && <button type="button" className="button button--primary" onClick={() => navigate(`/plan?site=${encodeURIComponent(data.site.id)}`)}>Build response plan</button>}
+            {activeWorkers.length > 0 && <button type="button" className="button button--primary" onClick={() => navigate(`/plan?site=${encodeURIComponent(data.site.id)}`)}>{elevatedWorkers.length ? 'Build response plan' : 'Review worker plan'}</button>}
           </div>
           <p className="command-decision__confidence-note"><ShieldCheck size={13} /> {decision.confidenceDetail}</p>
         </article>
 
         <article className="command-evidence">
           <button type="button" className="command-evidence__toggle" onClick={() => setEvidenceOpen((value) => !value)} aria-expanded={evidenceOpen}>
-            <Database size={16} /><span><small>Data Source</small><strong>{source}</strong></span><ChevronRight className={evidenceOpen ? 'is-open' : ''} size={16} />
+            <Database size={16} /><span><small>Environmental Source</small><strong>{source}</strong></span><ChevronRight className={evidenceOpen ? 'is-open' : ''} size={16} />
           </button>
           {evidenceOpen && (
             <div className="command-evidence__details">
               <div><span>Observation time</span><strong>{observationLabel(data.observedAt)}</strong></div>
-              <div><span>Thermal evidence</span><strong>{data.thermalStatus.replace('_', ' ')}</strong></div>
-              <div><span>Fallback active</span><strong>{data.fallbackActive ? 'Yes' : 'No'}</strong></div>
+              <div><span>FortyGuard thermal evidence</span><strong>{data.thermalStatus.replace('_', ' ')}</strong></div>
+              <div><span>Fallback atmospheric context</span><strong>{data.fallbackActive ? 'Active' : 'Not active'}</strong></div>
               {data.thermalMessage && <p>{data.thermalMessage}</p>}
             </div>
           )}
@@ -176,7 +185,7 @@ export function SiteStatusPanel({ data, onRefresh }: SiteStatusPanelProps) {
             <div><span>Temperature</span><strong>{deltaLabel(data.deltas?.temperatureC)}</strong></div>
             <div><span>Heat Index</span><strong>{deltaLabel(data.deltas?.heatIndexC)}</strong></div>
             <div><span>Humidity</span><strong>{deltaLabel(data.deltas?.humidityPercent, '%')}</strong></div>
-            <div><span>Spatial movement</span><strong>{data.deltas?.comparedAt ? 'Review thermal cells' : 'Awaiting comparison'}</strong></div>
+            <div><span>Spatial movement</span><strong>Not calculated</strong></div>
           </div>
         </article>
       </section>

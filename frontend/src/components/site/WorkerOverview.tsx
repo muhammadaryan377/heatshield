@@ -9,25 +9,38 @@ interface WorkerOverviewProps {
 }
 
 const avatarTones = ['avatar--teal', 'avatar--gold', 'avatar--slate', 'avatar--blue']
+const riskRank = { low: 0, medium: 1, high: 2, extreme: 3 } as const
 
 function recommendation(worker: Worker) {
-  if (worker.status === 'offsite') return { label: 'Offsite', tone: 'neutral' }
-  if (worker.status === 'break') return { label: 'Maintain break', tone: 'watch' }
-  if (worker.risk === 'extreme' || worker.risk === 'high') return { label: 'Reassign / reduce exposure', tone: 'danger' }
-  if (worker.risk === 'medium') return { label: 'Review in plan', tone: 'watch' }
-  return { label: 'Continue', tone: 'safe' }
+  if (worker.status === 'offsite') return { label: 'Offsite', tone: 'neutral', actionable: false }
+  if (worker.status === 'break') return { label: 'Maintain break', tone: 'watch', actionable: false }
+  if (worker.risk === 'extreme' || worker.risk === 'high') return { label: 'Review assignment', tone: 'danger', actionable: true }
+  if (worker.risk === 'medium') return { label: 'Review in plan', tone: 'watch', actionable: true }
+  return { label: 'No change', tone: 'safe', actionable: false }
 }
 
 export function WorkerOverview({ workers, siteId }: WorkerOverviewProps) {
   const navigate = useNavigate()
-  const visibleWorkers = workers.slice(0, 8)
+  const orderedWorkers = [...workers].sort((a, b) => {
+    const statusRank = (worker: Worker) => worker.status === 'active' ? 2 : worker.status === 'break' ? 1 : 0
+    const statusDelta = statusRank(b) - statusRank(a)
+    if (statusDelta) return statusDelta
+    return riskRank[b.risk] - riskRank[a.risk]
+  })
+  const visibleWorkers = orderedWorkers.slice(0, 8)
   const addWorker = () => navigate(`/workers/new?site=${encodeURIComponent(siteId)}`)
-  const elevatedCount = workers.filter((worker) => worker.status !== 'offsite' && worker.risk !== 'low').length
+  const activeWorkers = workers.filter((worker) => worker.status === 'active')
+  const elevatedCount = activeWorkers.filter((worker) => worker.risk !== 'low').length
+  const breakCount = workers.filter((worker) => worker.status === 'break').length
+  const offsiteCount = workers.filter((worker) => worker.status === 'offsite').length
 
   return (
     <section className="worker-overview worker-overview--command panel">
       <div className="panel-heading worker-overview__heading">
-        <div><h2>Worker Exposure Overview ({workers.length})</h2><span>{elevatedCount ? `${elevatedCount} worker${elevatedCount === 1 ? '' : 's'} need exposure review` : 'No assigned worker currently needs heat intervention'}</span></div>
+        <div>
+          <h2>Worker Exposure Overview ({workers.length})</h2>
+          <span>{elevatedCount ? `${elevatedCount} active worker${elevatedCount === 1 ? '' : 's'} need exposure review` : activeWorkers.length ? 'No active worker currently needs an exposure-driven assignment change' : 'No workers are currently marked active'}</span>
+        </div>
         <button type="button" className="button button--quiet" onClick={addWorker}><UserPlus size={16} /> Add Worker</button>
       </div>
 
@@ -46,13 +59,19 @@ export function WorkerOverview({ workers, siteId }: WorkerOverviewProps) {
                 {visibleWorkers.map((worker, index) => {
                   const next = recommendation(worker)
                   return (
-                    <tr key={worker.id} className={worker.risk === 'high' || worker.risk === 'extreme' ? 'worker-row--attention' : ''}>
+                    <tr key={worker.id} className={worker.status === 'active' && (worker.risk === 'high' || worker.risk === 'extreme') ? 'worker-row--attention' : ''}>
                       <td><div className="worker-name-cell"><span className={`worker-avatar ${avatarTones[index % avatarTones.length]}`}>{worker.initials}</span><span><strong>{worker.name}</strong><small>{worker.role}</small></span></div></td>
                       <td>{worker.task || 'Unassigned'}</td>
                       <td><span className={`location-dot location-dot--${worker.risk}`} />{worker.location}</td>
                       <td><RiskBadge level={worker.risk} compact /></td>
                       <td>{worker.shiftStart && worker.shiftEnd ? `${worker.shiftStart}–${worker.shiftEnd}` : worker.lastCheckIn || '—'}</td>
-                      <td><button type="button" className={`worker-recommendation worker-recommendation--${next.tone}`} onClick={() => navigate(`/plan?site=${encodeURIComponent(siteId)}`)}>{next.label}{next.tone !== 'neutral' && <ArrowRight size={13} />}</button></td>
+                      <td>
+                        {next.actionable ? (
+                          <button type="button" className={`worker-recommendation worker-recommendation--${next.tone}`} onClick={() => navigate(`/plan?site=${encodeURIComponent(siteId)}&worker=${encodeURIComponent(worker.id)}`)}>{next.label}<ArrowRight size={13} /></button>
+                        ) : (
+                          <span className={`worker-recommendation worker-recommendation--${next.tone}`}>{next.label}</span>
+                        )}
+                      </td>
                       <td><span className={`status-pill status-pill--${worker.status}`}>{worker.status === 'break' ? 'Break' : worker.status === 'offsite' ? 'Offsite' : 'Active'}</span></td>
                     </tr>
                   )
@@ -61,8 +80,8 @@ export function WorkerOverview({ workers, siteId }: WorkerOverviewProps) {
             </table>
           </div>
           <div className="worker-overview__footer">
-            <span>Showing {visibleWorkers.length} of {workers.length} workers</span>
-            <button type="button" className="text-link" onClick={() => navigate(`/plan?site=${encodeURIComponent(siteId)}`)}>Review worker plan <span>›</span></button>
+            <span>Showing {visibleWorkers.length} of {workers.length} · {activeWorkers.length} active{breakCount ? ` · ${breakCount} break` : ''}{offsiteCount ? ` · ${offsiteCount} offsite` : ''}</span>
+            {activeWorkers.length > 0 && <button type="button" className="text-link" onClick={() => navigate(`/plan?site=${encodeURIComponent(siteId)}`)}>Review worker plan <span>›</span></button>}
           </div>
         </>
       )}

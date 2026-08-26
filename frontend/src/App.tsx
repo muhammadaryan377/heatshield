@@ -1,4 +1,4 @@
-import { BrowserRouter, Route, Routes } from 'react-router-dom'
+import { BrowserRouter, Navigate, Route, Routes, useLocation } from 'react-router-dom'
 import { AppErrorBoundary } from './components/app/AppErrorBoundary'
 import { RouteEffects } from './components/app/RouteEffects'
 import { AddWorkerPage } from './pages/AddWorkerPage'
@@ -32,13 +32,20 @@ import { UrbanInterventionsPage } from './pages/UrbanInterventionsPage'
 import { UrbanOverviewPage } from './pages/UrbanOverviewPage'
 import './agriculture-polish.css'
 
+function RootRoute() {
+  const location = useLocation()
+  const siteId = new URLSearchParams(location.search).get('site')
+  if (siteId) return <Navigate to={`/workforce?site=${encodeURIComponent(siteId)}`} replace />
+  return <ModuleSelectionPage />
+}
+
 export default function App() {
   return (
     <AppErrorBoundary>
       <BrowserRouter>
         <RouteEffects />
         <Routes>
-          <Route path="/" element={<ModuleSelectionPage />} />
+          <Route path="/" element={<RootRoute />} />
           <Route path="/platform-readiness" element={<PlatformReadinessPage />} />
 
           <Route path="/workforce" element={<SiteIntelligencePage />} />
