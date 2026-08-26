@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -236,9 +236,12 @@ class FortyGuardProfileService:
             except ValueError as exc:
                 raise ValueError('FortyGuard profile date must use YYYY-MM-DD.') from exc
         else:
-            selected = local_today
-        if selected < date(2021, 1, 1):
-            raise ValueError('FortyGuard profile dates must be on or after 2021-01-01.')
+            # Daily profiles should represent a completed local day. Current-day
+            # provider layers can still be in progress or unavailable, which is
+            # unsuitable for persistence/exceedance decisions.
+            selected = local_today - timedelta(days=1)
+        if selected < date(2019, 1, 1):
+            raise ValueError('FortyGuard profile dates must be on or after 2019-01-01.')
         if selected > local_today:
             raise ValueError('FortyGuard profile date cannot be in the future for the selected site.')
         return selected.isoformat(), timezone_name
