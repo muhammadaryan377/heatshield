@@ -20,6 +20,7 @@ import { GeneratePlanPage } from './pages/GeneratePlanPage'
 import { HeatHistoryPage } from './pages/HeatHistoryPage'
 import { ModuleSelectionPage } from './pages/ModuleSelectionPage'
 import { NotFoundPage } from './pages/NotFoundPage'
+import { PlatformReadinessPage } from './pages/PlatformReadinessPage'
 import { ReportsPage } from './pages/ReportsPage'
 import { SiteIntelligencePage } from './pages/SiteIntelligencePage'
 import { SitesPage } from './pages/SitesPage'
@@ -38,6 +39,7 @@ export default function App() {
         <RouteEffects />
         <Routes>
           <Route path="/" element={<ModuleSelectionPage />} />
+          <Route path="/platform-readiness" element={<PlatformReadinessPage />} />
 
           <Route path="/workforce" element={<SiteIntelligencePage />} />
           <Route path="/workers/new" element={<AddWorkerPage />} />

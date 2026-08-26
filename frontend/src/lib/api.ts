@@ -39,6 +39,41 @@ export interface ConfigStatus {
   environment: string
 }
 
+export type PlatformModuleStatus = 'configure_provider' | 'add_site' | 'add_workers' | 'ready'
+
+export interface PlatformModuleReadiness {
+  status: PlatformModuleStatus
+  ready: boolean
+  detail: string
+}
+
+export interface PlatformReadiness {
+  environment: string
+  readinessScore: number
+  productionSafeDataMode: boolean
+  providers: {
+    fortyguard: { configured: boolean; role: string }
+    nws: { configured: boolean; role: string }
+    deepseek: { configured: boolean; role: string }
+  }
+  workspace: {
+    siteCount: number
+    activeSiteCount: number
+    boundaryReadySiteCount: number
+    workerCount: number
+    zoneCount: number
+    approvedZoneCount: number
+    workersBySite: Record<string, number>
+  }
+  modules: {
+    workforce: PlatformModuleReadiness
+    enterprise: PlatformModuleReadiness
+    agriculture: PlatformModuleReadiness
+    urban: PlatformModuleReadiness
+  }
+  warnings: string[]
+}
+
 export class ApiError extends Error {
   status: number
 
@@ -76,6 +111,9 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 export const api = {
   getConfigStatus(signal?: AbortSignal) {
     return request<ConfigStatus>('/api/config/status', { signal })
+  },
+  getPlatformReadiness(signal?: AbortSignal) {
+    return request<PlatformReadiness>('/api/platform/readiness', { signal })
   },
   listSites(signal?: AbortSignal) {
     return request<Site[]>('/api/sites', { signal })

@@ -176,7 +176,7 @@ function buildCandidates(history: HistoricalHeatBehaviorResponse | null, thermal
 
   if (!thermalReady || !thermal) return []
   const ordered = [...thermal.tiles].sort((a, b) => b.temperatureC - a.temperatureC)
-  return ordered.map((tile) => {
+  return ordered.map((tile): AnalysisCandidate => {
     const lift = meanTemperature == null ? null : tile.temperatureC - meanTemperature
     const score = maxLift && lift != null ? Math.round(clamp(Math.max(lift, 0) / maxLift) * 100) : 0
     return {
