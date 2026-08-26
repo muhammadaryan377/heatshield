@@ -18,6 +18,17 @@ export interface AgentOption {
   constraintNotes: string[]
 }
 
+export interface AgentTemporalEvidence {
+  status: 'complete' | 'partial' | 'unmatched' | 'unavailable'
+  profileDate?: string | null
+  thresholdC?: number | null
+  peakTemperatureC?: number | null
+  peakHourLocal?: string | null
+  hoursAboveThreshold?: number | null
+  persistenceHours?: number | null
+  detail: string
+}
+
 export interface AgentCritique {
   source: 'deepseek' | 'deterministic'
   supportsRecommendation: boolean
@@ -40,6 +51,7 @@ export interface AgentWorkerDecision {
   heatIndexC?: number | null
   evidenceFreshness: 'current_hour' | 'recent_completed_hour' | 'unavailable'
   baselineObservedAt?: string | null
+  temporalEvidence: AgentTemporalEvidence
   candidates: AgentOption[]
   recommendedChoice: 'now' | 'better_time' | 'better_place' | 'review'
   recommendation: string
@@ -71,6 +83,8 @@ export interface AgenticHeatPlan {
   conditionSource?: 'fortyguard' | 'nws' | null
   conditionHeatIndexC?: number | null
   providerRequestCount: number
+  historicalProfileStatus?: 'verified' | 'partial' | 'unavailable' | 'configuration_required' | null
+  historicalProfileDate?: string | null
   activeWorkerCount: number
   approvedZoneCount: number
   evidenceCoveragePercent: number
