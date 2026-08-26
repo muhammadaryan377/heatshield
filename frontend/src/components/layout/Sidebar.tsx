@@ -1,4 +1,5 @@
 import {
+  Activity,
   ArrowLeft,
   BarChart3,
   Bell,
@@ -79,6 +80,7 @@ const moduleNavigation = {
     label: 'Platform',
     workspace: 'HeatShield Ops',
     nav: [
+      { to: '/platform-readiness', label: 'Platform Readiness', icon: Activity, end: true },
       { to: '/reports', label: 'Heat Reports', icon: BarChart3, end: true },
     ],
   },
@@ -132,11 +134,18 @@ export function Sidebar({ module, hidden, onHide }: SidebarProps) {
       </nav>
 
       <div className="sidebar__footer">
+        {module !== 'global' && (
+          <Link className="platform-readiness-link" to="/platform-readiness" title="Check platform readiness">
+            <Activity size={16} />
+            <span><strong>Platform Readiness</strong><small>Providers &amp; workspace setup</small></span>
+            <span aria-hidden="true">›</span>
+          </Link>
+        )}
         <Link className="workspace-switcher" to={workspaceHome} title={`Open ${config.workspace} home`}>
           <span className="workspace-switcher__avatar">HS</span>
           <span className="workspace-switcher__text">
             <strong>{config.workspace}</strong>
-            <small>FortyGuard Evidence</small>
+            <small>Verified-first intelligence</small>
           </span>
           <span className="workspace-switcher__chevron">›</span>
         </Link>
