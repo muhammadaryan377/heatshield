@@ -23,6 +23,17 @@ class AgentOption(CamelModel):
     constraintNotes: list[str] = Field(default_factory=list)
 
 
+class AgentTemporalEvidence(CamelModel):
+    status: Literal['complete', 'partial', 'unmatched', 'unavailable']
+    profileDate: str | None = None
+    thresholdC: float | None = None
+    peakTemperatureC: float | None = None
+    peakHourLocal: str | None = None
+    hoursAboveThreshold: float | None = None
+    persistenceHours: float | None = None
+    detail: str
+
+
 class AgentCritique(CamelModel):
     source: Literal['deepseek', 'deterministic'] = 'deterministic'
     supportsRecommendation: bool = True
@@ -45,6 +56,7 @@ class AgentWorkerDecision(CamelModel):
     heatIndexC: float | None = None
     evidenceFreshness: Literal['current_hour', 'recent_completed_hour', 'unavailable']
     baselineObservedAt: str | None = None
+    temporalEvidence: AgentTemporalEvidence | None = None
     candidates: list[AgentOption] = Field(default_factory=list)
     recommendedChoice: Literal['now', 'better_time', 'better_place', 'review']
     recommendation: str
@@ -76,6 +88,8 @@ class AgenticHeatPlan(CamelModel):
     conditionSource: Literal['fortyguard', 'nws'] | None = None
     conditionHeatIndexC: float | None = None
     providerRequestCount: int = 0
+    historicalProfileStatus: Literal['verified', 'partial', 'unavailable', 'configuration_required'] | None = None
+    historicalProfileDate: str | None = None
     activeWorkerCount: int = 0
     approvedZoneCount: int = 0
     evidenceCoveragePercent: int = Field(ge=0, le=100)
