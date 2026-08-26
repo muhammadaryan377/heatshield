@@ -2,6 +2,7 @@ import { BrowserRouter, Navigate, Route, Routes, useLocation } from 'react-route
 import { AppErrorBoundary } from './components/app/AppErrorBoundary'
 import { RouteEffects } from './components/app/RouteEffects'
 import { AddWorkerPage } from './pages/AddWorkerPage'
+import { AgenticOperationsPage } from './pages/AgenticOperationsPage'
 import { AgricultureAlertsPage } from './pages/AgricultureAlertsPage'
 import { AgricultureCropHeatStressPage } from './pages/AgricultureCropHeatStressPage'
 import { AgricultureFarmsPage } from './pages/AgricultureFarmsPage'
@@ -16,7 +17,6 @@ import { EnterpriseOverviewPage } from './pages/EnterpriseOverviewPage'
 import { EnterprisePortfolioRiskPage } from './pages/EnterprisePortfolioRiskPage'
 import { EnterprisePropertyExposurePage } from './pages/EnterprisePropertyExposurePage'
 import { EnterpriseSitesPage } from './pages/EnterpriseSitesPage'
-import { GeneratePlanPage } from './pages/GeneratePlanPage'
 import { HeatHistoryPage } from './pages/HeatHistoryPage'
 import { ModuleSelectionPage } from './pages/ModuleSelectionPage'
 import { NotFoundPage } from './pages/NotFoundPage'
@@ -84,7 +84,7 @@ export default function App() {
           <Route path="/workforce" element={<SiteIntelligencePage />} />
           <Route path="/workers/new" element={<AddWorkerPage />} />
           <Route path="/add-worker" element={<AddWorkerPage />} />
-          <Route path="/plan" element={<GeneratePlanPage />} />
+          <Route path="/plan" element={<AgenticOperationsPage />} />
           <Route path="/sites" element={<SitesPage />} />
           <Route path="/historical-intelligence" element={<HeatHistoryPage />} />
           <Route path="/heat-history" element={<HeatHistoryPage />} />
