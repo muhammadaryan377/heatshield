@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from hashlib import sha1
 from typing import Any
 from zoneinfo import ZoneInfo
@@ -162,7 +162,10 @@ def _study_date(site, requested: str | None) -> tuple[str, str]:
         except ValueError as exc:
             raise ValueError('Field heat date must use YYYY-MM-DD.') from exc
     else:
-        selected = local_today
+        # Field analytics are daily evidence products. Default to the last fully
+        # completed local day so Crop Stress, Irrigation, Field Work and Alerts
+        # do not depend on an in-progress current-day FortyGuard layer.
+        selected = local_today - timedelta(days=1)
     if selected < date(2019, 1, 1):
         raise ValueError('FortyGuard field heat dates must be on or after 2019-01-01.')
     if selected > local_today:

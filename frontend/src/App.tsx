@@ -32,11 +32,28 @@ import { UrbanInterventionsPage } from './pages/UrbanInterventionsPage'
 import { UrbanOverviewPage } from './pages/UrbanOverviewPage'
 import './agriculture-polish.css'
 
+const AGRICULTURE_FARM_STORAGE_KEY = 'heatshield:selected-agriculture-farm'
+
 function RootRoute() {
   const location = useLocation()
   const siteId = new URLSearchParams(location.search).get('site')
   if (siteId) return <Navigate to={`/workforce?site=${encodeURIComponent(siteId)}`} replace />
   return <ModuleSelectionPage />
+}
+
+function AgricultureContextRoute({ children }: { children: React.ReactNode }) {
+  const location = useLocation()
+  const search = new URLSearchParams(location.search)
+  const requestedFarm = search.get('farm')
+  const storedFarm = typeof window !== 'undefined' ? window.localStorage.getItem(AGRICULTURE_FARM_STORAGE_KEY) : null
+
+  if (!requestedFarm && storedFarm) {
+    search.set('farm', storedFarm)
+    const query = search.toString()
+    return <Navigate to={`${location.pathname}${query ? `?${query}` : ''}`} replace />
+  }
+
+  return children
 }
 
 export default function App() {
@@ -66,13 +83,13 @@ export default function App() {
           <Route path="/enterprise/reports" element={<EnterpriseHeatRiskReportsPage />} />
           <Route path="/enterprise/*" element={<NotFoundPage />} />
 
-          <Route path="/agriculture" element={<AgricultureOverviewPage />} />
-          <Route path="/agriculture/farms" element={<AgricultureFarmsPage />} />
-          <Route path="/agriculture/fields" element={<AgricultureFieldsPage />} />
-          <Route path="/agriculture/crop-heat-stress" element={<AgricultureCropHeatStressPage />} />
-          <Route path="/agriculture/irrigation" element={<AgricultureIrrigationPlannerPage />} />
-          <Route path="/agriculture/field-work" element={<AgricultureFieldWorkPlannerPage />} />
-          <Route path="/agriculture/alerts" element={<AgricultureAlertsPage />} />
+          <Route path="/agriculture" element={<AgricultureContextRoute><AgricultureOverviewPage /></AgricultureContextRoute>} />
+          <Route path="/agriculture/farms" element={<AgricultureContextRoute><AgricultureFarmsPage /></AgricultureContextRoute>} />
+          <Route path="/agriculture/fields" element={<AgricultureContextRoute><AgricultureFieldsPage /></AgricultureContextRoute>} />
+          <Route path="/agriculture/crop-heat-stress" element={<AgricultureContextRoute><AgricultureCropHeatStressPage /></AgricultureContextRoute>} />
+          <Route path="/agriculture/irrigation" element={<AgricultureContextRoute><AgricultureIrrigationPlannerPage /></AgricultureContextRoute>} />
+          <Route path="/agriculture/field-work" element={<AgricultureContextRoute><AgricultureFieldWorkPlannerPage /></AgricultureContextRoute>} />
+          <Route path="/agriculture/alerts" element={<AgricultureContextRoute><AgricultureAlertsPage /></AgricultureContextRoute>} />
           <Route path="/agriculture/*" element={<NotFoundPage />} />
 
           <Route path="/urban" element={<UrbanOverviewPage />} />
