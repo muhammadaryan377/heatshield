@@ -18,6 +18,7 @@ function lastCompletedDay() {
 
 function pageTitle(pathname: string) {
   if (pathname === '/') return 'HeatShield · Intelligence Platform'
+  if (pathname === '/platform-readiness') return 'Platform Readiness · HeatShield'
   if (pathname === '/enterprise') return 'Enterprise Overview · HeatShield'
   if (pathname.startsWith('/enterprise/sites')) return 'Enterprise Sites · HeatShield'
   if (pathname.startsWith('/enterprise/property-exposure')) return 'Property Heat Exposure · HeatShield'
@@ -28,15 +29,14 @@ function pageTitle(pathname: string) {
   if (pathname.startsWith('/workforce')) return 'Workforce Safety · HeatShield'
   if (pathname.startsWith('/workers')) return 'Workers · HeatShield'
   if (pathname.startsWith('/plan')) return 'Operational Plan · HeatShield'
-  if (pathname.startsWith('/heat-history')) return 'Historical Heat Intelligence · HeatShield'
+  if (pathname.startsWith('/heat-history') || pathname.startsWith('/historical-intelligence')) return 'Historical Heat Intelligence · HeatShield'
   if (pathname.startsWith('/agriculture')) return 'Agriculture Intelligence · HeatShield'
   if (pathname.startsWith('/urban')) return 'Urban Intelligence · HeatShield'
   if (pathname.startsWith('/reports')) return 'Reports · HeatShield'
-  if (pathname.startsWith('/settings')) return 'Settings · HeatShield'
   return 'HeatShield'
 }
 
-export function RouteEffects() {
+export function RouteEffects(): null {
   const location = useLocation()
 
   useEffect(() => {
