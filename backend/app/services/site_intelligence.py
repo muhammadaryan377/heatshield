@@ -123,14 +123,49 @@ class SiteIntelligenceService:
         return evaluated, high_count
 
     def _next_action(self, workers: list[Worker], risk: Risk, source_label: str) -> NextAction | None:
-        if workers and risk.level in ('medium', 'high', 'extreme'):
-            return NextAction(
-                title='Review exposed workers and hydration controls',
-                detail=f'Recommended from the latest verified {source_label} conditions.',
-                actionLabel='Review Workers',
-                dueInMinutes=15,
+        if not workers or risk.level not in ('medium', 'high', 'extreme'):
+            return None
+
+        risk_rank = {'low': 0, 'medium': 1, 'high': 2, 'extreme': 3}
+        priority_worker = max(workers, key=lambda worker: risk_rank[worker.risk])
+        exposed_count = sum(worker.risk in ('high', 'extreme') for worker in workers)
+
+        if priority_worker.risk == 'extreme':
+            title = f'Review {priority_worker.name} before work continues'
+            detail = (
+                f'{priority_worker.name} is screened at extreme exposure from the latest verified '
+                f'{source_label} conditions plus task context. Open the action plan to compare timing, '
+                'location and recovery controls.'
             )
-        return None
+            due = 5
+        elif exposed_count:
+            title = f'Review {exposed_count} high-exposure worker' + ('s' if exposed_count != 1 else '')
+            detail = (
+                f'Worker context combined with the latest verified {source_label} conditions indicates '
+                'elevated exposure. Open the action plan before issuing operational changes.'
+            )
+            due = 10
+        else:
+            title = 'Review the next heat-control window'
+            detail = (
+                f'The latest verified {source_label} conditions require active monitoring. '
+                'Open the action plan to review worker-level controls and timing options.'
+            )
+            due = 15
+
+        return NextAction(
+            title=title,
+            detail=detail,
+            actionLabel='Open Action Plan',
+            dueInMinutes=due,
+        )
+
+    async def _forecast_context(self, site) -> list:
+        """Best-effort official forecast context; never replaces FortyGuard spatial evidence."""
+        try:
+            return await self.nws.fetch_hourly_forecast(site=site, limit=12)
+        except NWSAPIError:
+            return []
 
     async def _nws_fallback(
         self,
@@ -141,13 +176,7 @@ class SiteIntelligenceService:
         thermal_message: str,
     ) -> SiteIntelligence:
         observation = await self.nws.fetch_observation(site=site)
-        try:
-            forecast = await self.nws.fetch_hourly_forecast(site=site, limit=12)
-        except NWSAPIError:
-            # The current observation is still valid when the hourly endpoint is
-            # temporarily unavailable. Forecast context is optional and never
-            # substituted with synthetic values.
-            forecast = []
+        forecast = await self._forecast_context(site)
 
         risk = site_risk(observation.heat_index_c)
         evaluated_workers, high_count = self._with_worker_risk(workers, observation.heat_index_c)
@@ -262,6 +291,7 @@ class SiteIntelligenceService:
 
         risk = site_risk(observation.heat_index_c)
         evaluated_workers, high_count = self._with_worker_risk(workers, observation.heat_index_c)
+        forecast = await self._forecast_context(site)
         is_live = observation.source_age_hours == 0
         if is_live:
             status_message = None
@@ -297,5 +327,6 @@ class SiteIntelligenceService:
             risk=risk,
             workers=evaluated_workers,
             highExposureCount=high_count,
+            forecast=forecast,
             nextAction=self._next_action(evaluated_workers, risk, 'FortyGuard'),
         )
