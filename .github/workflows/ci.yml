@@ -124,6 +124,20 @@ jobs:
           assert history_payload['dayCount'] == 30
           assert round(history_payload['thresholdC'], 1) == 35.0
 
+          for module in ('enterprise', 'agriculture', 'urban'):
+              mission = client.post(
+                  f"/api/sites/{site['id']}/domain-agent",
+                  json={'module': module, 'thresholdC': 35, 'granularityMeters': 100},
+              )
+              assert mission.status_code == 200, (module, mission.text)
+              mission_payload = mission.json()
+              assert mission_payload['module'] == module
+              assert mission_payload['site']['id'] == site['id']
+              assert mission_payload['agentMode'] == 'deterministic_agent'
+              assert mission_payload['decision']['humanApprovalRequired'] is True
+              assert mission_payload['decision']['nextRoute']
+              assert mission_payload['trace']
+
           worker_payload = {
               'name': 'Test Worker',
               'role': 'Roofer',
@@ -178,5 +192,5 @@ jobs:
           )
           assert verification.status_code == 200, verification.text
           assert verification.json()['status'] == 'verification_unavailable'
-          print('HeatShield setup, agriculture fields, historical behavior and operational planner smoke test passed')
+          print('HeatShield setup, agriculture fields, domain agents, historical behavior and operational planner smoke test passed')
           PY
