@@ -1,5 +1,6 @@
 import { ArrowRight, Bot, CheckCircle2, CircleDot, Repeat2, ShieldCheck } from 'lucide-react'
 import { Link, useLocation } from 'react-router-dom'
+import { contextualModuleRoute } from '../../lib/moduleContext'
 import type { HeatShieldModule } from './AppShell'
 import './module-mission-rail.css'
 
@@ -68,7 +69,8 @@ export function ModuleMissionRail({ module }: { module: HeatShieldModule }) {
   if (module === 'global') return null
 
   const mission = missions[module]
-  const activeIndex = Math.max(0, mission.steps.findIndex((step) => pathMatches(location.pathname, step.matches)))
+  const activeIndex = mission.steps.findIndex((step) => pathMatches(location.pathname, step.matches))
+  const routeFor = (to: string) => contextualModuleRoute(to, module, location.search)
 
   return (
     <section className={`module-mission-rail module-mission-rail--${module}`} aria-label={`${module} operational mission`}>
@@ -80,13 +82,14 @@ export function ModuleMissionRail({ module }: { module: HeatShieldModule }) {
 
       <div className="module-mission-rail__steps">
         {mission.steps.map((step, index) => {
-          const complete = index < activeIndex
-          const active = index === activeIndex
+          const complete = activeIndex >= 0 && index < activeIndex
+          const active = activeIndex >= 0 && index === activeIndex
           return (
             <Link
               key={`${step.label}-${index}`}
-              to={step.to}
+              to={routeFor(step.to)}
               className={`module-mission-step${active ? ' is-active' : ''}${complete ? ' is-complete' : ''}`}
+              aria-current={active ? 'step' : undefined}
             >
               <span className="module-mission-step__icon">
                 {complete ? <CheckCircle2 size={16} /> : active ? <CircleDot size={16} /> : <span>{index + 1}</span>}
