@@ -19,9 +19,9 @@ interface TopbarProps {
 }
 
 function formatTimestamp(value?: string | null) {
-  if (!value) return 'No live observation yet'
+  if (!value) return 'No provider observation yet'
   const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return 'Latest observation'
+  if (Number.isNaN(date.getTime())) return 'Provider observation available'
   return new Intl.DateTimeFormat('en-US', {
     month: 'short',
     day: 'numeric',
@@ -42,8 +42,8 @@ export function Topbar({
   showAddSite = true,
   showSiteSelector = true,
   showObservation = true,
-  showSearch = true,
-  showNotifications = true,
+  showSearch = false,
+  showNotifications = false,
   showPlanButton = true,
 }: TopbarProps) {
   const navigate = useNavigate()
@@ -62,6 +62,7 @@ export function Topbar({
             value={selectedSiteId ?? ''}
             onChange={(event) => event.target.value && onSiteChange?.(event.target.value)}
             aria-label="Select work site"
+            disabled={!sites.length}
           >
             {!sites.length && <option value="">No sites yet</option>}
             {sites.map((site) => <option key={site.id} value={site.id}>{site.name}</option>)}
@@ -76,7 +77,7 @@ export function Topbar({
       )}
 
       {showObservation && (
-        <div className="topbar-control topbar-control--date">
+        <div className="topbar-control topbar-control--date" title="Latest evidence timestamp returned for this workspace">
           <CalendarDays size={16} />
           <span>{formatTimestamp(observedAt)}</span>
         </div>
