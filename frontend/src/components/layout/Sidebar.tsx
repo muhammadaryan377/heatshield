@@ -22,7 +22,8 @@ import {
   UserPlus,
   Users,
 } from 'lucide-react'
-import { Link, NavLink } from 'react-router-dom'
+import { Link, NavLink, useLocation } from 'react-router-dom'
+import { contextualModuleRoute } from '../../lib/moduleContext'
 import type { HeatShieldModule } from './AppShell'
 import { BrandLogo } from '../ui/BrandLogo'
 
@@ -102,8 +103,10 @@ interface SidebarProps {
 }
 
 export function Sidebar({ module, hidden, onHide }: SidebarProps) {
+  const location = useLocation()
   const config = moduleNavigation[module]
-  const workspaceHome = config.nav[0]?.to ?? '/'
+  const routeFor = (to: string) => contextualModuleRoute(to, module, location.search)
+  const workspaceHome = routeFor(config.nav[0]?.to ?? '/')
 
   return (
     <aside className={`sidebar${hidden ? ' sidebar--hidden' : ''}`} aria-hidden={hidden}>
@@ -128,7 +131,7 @@ export function Sidebar({ module, hidden, onHide }: SidebarProps) {
         {config.nav.map(({ to, label, icon: Icon, end }) => (
           <NavLink
             key={to}
-            to={to}
+            to={routeFor(to)}
             className={({ isActive }) => `sidebar__nav-item${isActive ? ' sidebar__nav-item--active' : ''}`}
             end={end}
           >
