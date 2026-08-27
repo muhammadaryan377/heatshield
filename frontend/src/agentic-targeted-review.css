@@ -1,0 +1,56 @@
+.agent-focus-banner {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 14px;
+  align-items: center;
+  padding: 16px 18px;
+  border-color: #d6e6e2;
+  background: #fbfdfd;
+}
+
+.agent-focus-banner > svg { color: #167b74; }
+.agent-focus-banner > div { display: grid; gap: 4px; }
+.agent-focus-banner > div > strong { font-size: 14px; }
+.agent-focus-banner p {
+  margin: 0;
+  color: #61716d;
+  font-size: 12px;
+  line-height: 1.5;
+}
+.agent-focus-banner > span {
+  font-size: 11px;
+  font-weight: 800;
+  color: #51706a;
+  white-space: nowrap;
+}
+.agent-focus-banner--resolved {
+  border-color: #bcded7;
+  background: #f3faf8;
+}
+.agent-focus-banner--warning {
+  border-color: #eadcb3;
+  background: #fffdf8;
+}
+.agent-focus-banner--warning > svg { color: #8b6a17; }
+
+.agent-worker { scroll-margin-top: 170px; }
+.agent-worker--targeted {
+  border-color: #78bdb3;
+  box-shadow: 0 0 0 3px rgba(23, 142, 133, .08), var(--shadow-soft);
+}
+.agent-worker__targeted-badge {
+  display: inline-flex !important;
+  align-items: center;
+  gap: 5px;
+  border-color: #9dccc4 !important;
+  background: #eaf7f5;
+  color: #126c66 !important;
+}
+
+@media (max-width: 820px) {
+  .agent-focus-banner { grid-template-columns: auto 1fr; }
+  .agent-focus-banner > span {
+    grid-column: 2;
+    white-space: normal;
+  }
+}
