@@ -91,11 +91,11 @@ export function ModuleSelectionPage() {
               <strong>FortyGuard</strong>
             </span>
           </div>
-          <div className="module-user-card" aria-label="Current workspace">
+          <div className="module-user-card" aria-label="HeatShield workspace mode">
             <span className="module-user-card__avatar">HS</span>
             <span>
-              <strong>HeatShield Ops</strong>
-              <small>Enterprise workspace</small>
+              <strong>HeatShield Platform</strong>
+              <small>Evidence-bound workspace</small>
             </span>
           </div>
         </div>
