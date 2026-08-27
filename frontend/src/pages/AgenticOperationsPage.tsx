@@ -93,6 +93,8 @@ function CandidateCard({ candidate, selected }: { candidate: AgentOption; select
 export function AgenticOperationsPage() {
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
+  const focusWorkerId = searchParams.get('worker')
+  const focusMode = searchParams.get('mode') === 'adjust' ? 'adjust' : 'review'
   const [sites, setSites] = useState<Site[]>([])
   const [siteId, setSiteId] = useState(searchParams.get('site') ?? '')
   const [plan, setPlan] = useState<AgenticHeatPlan | null>(null)
@@ -130,6 +132,32 @@ export function AgenticOperationsPage() {
       highConfidence: plan.workers.filter((item) => item.confidenceLevel === 'high').length,
     }
   }, [plan])
+
+  const focusedDecision = useMemo(
+    () => focusWorkerId ? plan?.workers.find((item) => item.workerId === focusWorkerId) ?? null : null,
+    [focusWorkerId, plan],
+  )
+
+  const workerDecisions = useMemo(() => {
+    if (!plan) return []
+    if (!focusWorkerId) return plan.workers
+    return [...plan.workers].sort((a, b) => {
+      if (a.workerId === focusWorkerId) return -1
+      if (b.workerId === focusWorkerId) return 1
+      return 0
+    })
+  }, [focusWorkerId, plan])
+
+  useEffect(() => {
+    if (!plan || !focusWorkerId || !focusedDecision) return
+    const frame = window.requestAnimationFrame(() => {
+      const target = document.getElementById(`agent-worker-${focusWorkerId}`)
+      if (!target) return
+      const reduceMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false
+      target.scrollIntoView({ behavior: reduceMotion ? 'auto' : 'smooth', block: 'start' })
+    })
+    return () => window.cancelAnimationFrame(frame)
+  }, [focusWorkerId, focusedDecision, plan])
 
   const changeSite = (next: string) => {
     setSiteId(next)
@@ -246,6 +274,13 @@ export function AgenticOperationsPage() {
               <button type="button" className="button button--primary agent-run" disabled={!canRun} onClick={() => void runAgent()}>{running ? <LoaderCircle className="agent-spin" size={17} /> : <BrainCircuit size={17} />}{running ? 'Agent is reasoning…' : plan ? 'Run Agent Again' : 'Run HeatShield Agent'}</button>
             </section>
 
+            {focusWorkerId && !plan && !running && (
+              <section className="agent-focus-banner panel">
+                <Target size={20} />
+                <div><span className="agent-eyebrow">TARGETED WORKER REVIEW</span><strong>Worker context carried into this decision workspace</strong><p>Run the agent to evaluate the requested worker with the same site-wide evidence and constraints. HeatShield will surface that worker first without taking any automatic action.</p></div>
+              </section>
+            )}
+
             {running && !plan && <section className="agent-state panel"><BrainCircuit className="agent-pulse" size={25} /><div><strong>Agent loop in progress</strong><p>Collecting spatial evidence, generating candidate actions, applying constraints and running the bounded critic.</p></div></section>}
 
             {plan && (
@@ -265,16 +300,32 @@ export function AgenticOperationsPage() {
 
                 {plan.warnings.length > 0 && <section className="agent-warning panel"><AlertTriangle size={17} /><div>{plan.warnings.slice(0, 6).map((warning) => <p key={warning}>{warning}</p>)}</div></section>}
 
+                {focusWorkerId && (
+                  focusedDecision ? (
+                    <section className="agent-focus-banner agent-focus-banner--resolved panel">
+                      <Target size={20} />
+                      <div><span className="agent-eyebrow">TARGETED REVIEW</span><strong>{focusedDecision.workerName}</strong><p>{focusMode === 'adjust' ? 'Assignment adjustment was requested from the site map. The worker is surfaced first below; any change still requires verified evidence and supervisor approval.' : 'This worker was selected for review from the operational workspace and is surfaced first below. The agent still evaluates all active workers consistently.'}</p></div>
+                      <span>Surfaced first · no automatic action</span>
+                    </section>
+                  ) : (
+                    <section className="agent-focus-banner agent-focus-banner--warning panel">
+                      <AlertTriangle size={20} />
+                      <div><span className="agent-eyebrow">TARGETED REVIEW</span><strong>Requested worker is not in this active decision set</strong><p>The worker may be offsite, on break, inactive, or no longer assigned to this site. HeatShield did not fabricate a decision for a worker that the agent could not evaluate.</p></div>
+                    </section>
+                  )
+                )}
+
                 <section className="agent-worker-list">
                   <div className="agent-section-head"><div><span className="agent-eyebrow">AGENT DECISIONS</span><h2>Worker-by-worker proposals</h2><p>Every proposal shows candidate evidence, constraints, confidence and critic output before approval.</p></div></div>
 
-                  {plan.workers.map((decision) => {
+                  {workerDecisions.map((decision) => {
                     const approval = approvals[decision.workerId]
                     const selected = selectedCandidate(decision)
-                    return <article key={decision.workerId} className="agent-worker panel">
+                    const targeted = decision.workerId === focusWorkerId
+                    return <article id={`agent-worker-${decision.workerId}`} key={decision.workerId} className={`agent-worker panel${targeted ? ' agent-worker--targeted' : ''}`}>
                       <header className="agent-worker__header">
                         <div className="agent-worker__identity"><span>{decision.workerName.split(' ').map((part) => part[0]).slice(0, 2).join('')}</span><div><h3>{decision.workerName}</h3><p>{decision.role} · {decision.task} · {decision.currentArea}</p></div></div>
-                        <div className="agent-worker__badges"><span>{decision.evidenceFreshness.replaceAll('_', ' ')}</span><span className={`confidence confidence--${decision.confidenceLevel}`}>{decision.confidenceScore}/100 · {decision.confidenceLevel}</span></div>
+                        <div className="agent-worker__badges">{targeted && <span className="agent-worker__targeted-badge"><Target size={12} /> Targeted review</span>}<span>{decision.evidenceFreshness.replaceAll('_', ' ')}</span><span className={`confidence confidence--${decision.confidenceLevel}`}>{decision.confidenceScore}/100 · {decision.confidenceLevel}</span></div>
                       </header>
 
                       <div className="agent-context-row">
